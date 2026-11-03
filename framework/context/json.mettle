@@ -125,6 +125,29 @@ export fn rz_json_find(body: string, key: string) -> int64 {
   return -1;
 }
 
+// The raw bytes of element `index` of a top-level JSON array (`[a, b, ...]`),
+// e.g. a Phoenix channel message. Nested values are skipped whole. Returns
+// false when `body` is not an array or has no such element.
+export fn rz_json_array_at(body: string, index: int32, out: string*) -> bool {
+  var n: int64 = (int64)body.length;
+  var i: int64 = rz_json_skip_ws(body, 0);
+  if (i >= n || body.chars[i] != 91) { return false; }
+  i = rz_json_skip_ws(body, i + 1);
+  var at: int32 = 0;
+  while (i < n && body.chars[i] != 93) {
+    var e: int64 = rz_json_value_end(body, i);
+    if (e < 0 || e <= i) { return false; }
+    if (at == index) {
+      if (out != 0) { *out = raize_str_sub(body, i, e); }
+      return true;
+    }
+    i = rz_json_skip_ws(body, e);
+    if (i < n && body.chars[i] == 44) { i = rz_json_skip_ws(body, i + 1); }
+    at = at + 1;
+  }
+  return false;
+}
+
 export fn rz_json_has(body: string, key: string) -> bool {
   return rz_json_find(body, key) >= 0;
 }
@@ -388,5 +411,18 @@ export fn rz_json_escape_into(buf: RaizeBuf*, s: string) {
   rz_json_escape_into(b, ctl);
   if (!raize_str_eq(raize_buf_str(b), "\\u0001")) { raize_buf_free(b); return 3; }
   raize_buf_free(b);
+  return 0;
+}
+
+@test fn t_rz_json_array_at() -> int32 {
+  var msg: string = "[\"1\", null, \"room:lobby\", \"phx_join\", {{\"a\": [1, 2], \"b\": \"]\"}]";
+  var v: string = raize_str_empty();
+  if (!rz_json_array_at(msg, 0, &v) || !raize_str_eq(v, "\"1\"")) { return 1; }
+  if (!rz_json_array_at(msg, 1, &v) || !raize_str_eq(v, "null")) { return 2; }
+  if (!rz_json_array_at(msg, 2, &v) || !raize_str_eq(v, "\"room:lobby\"")) { return 3; }
+  if (!rz_json_array_at(msg, 4, &v) || !raize_str_eq(v, "{{\"a\": [1, 2], \"b\": \"]\"}")) { return 4; }
+  if (rz_json_array_at(msg, 5, &v)) { return 5; }
+  if (rz_json_array_at("{{\"a\": 1}", 0, &v)) { return 6; }
+  if (rz_json_array_at("[]", 0, &v)) { return 7; }
   return 0;
 }
