@@ -1,0 +1,179 @@
+// tests/fixtures/middleware/app — the middleware chain on a real socket.
+//
+// wire.mettle proves the chain in memory; this fixture is the curl surface, so
+// every arm can be seen over TCP with the server module's framing, keep-alive
+// and Content-Length in the loop:
+//
+//   GET  /ok           200 "ok"                 (needs a token: auth is global)
+//   GET  /secret       200 "secret" only with Authorization: Bearer good
+//   GET  /boom         500 generic body; the detail only reaches stderr
+//   GET  /inject       200 "refused" (the CRLF header the handler tried to set
+//                      was refused by the guard; the response is not split)
+//   GET  /arena        the request arena's used bytes (constant across
+//                      requests: the server frees it on every exit path)
+//   OPTIONS /secret    CORS preflight, 204 + Allow-Origin/-Methods/-Headers
+//   any with no/other token -> 401 + WWW-Authenticate
+//
+// CORS config here is deliberately the *strict* pair — one exact origin with
+// credentials enabled — so the run proves the wildcard rule over the wire:
+// Access-Control-Allow-Origin echoes the origin and is never "*".
+// (examples/site proves the default wildcard pair over the wire.)
+//
+// Build and run from the repo root:
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/app.mettle -o build/rz_mw_app
+//   ./build/rz_mw_app            # 127.0.0.1:8093
+//   ./build/rz_mw_app --port N
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/server/server";
+import "../../../framework/middleware/chain";
+import "../../../framework/middleware/logging";
+import "../../../framework/middleware/recover";
+import "../../../framework/middleware/cors";
+import "../../../framework/middleware/auth";
+
+const APP_ORIGIN: string = "https://app.example";
+const APP_REALM: string = "fixture";
+const APP_TOKEN: string = "good";
+const APP_PORT: int32 = 8093;
+
+var g_chain: RzChain* = 0;
+
+fn app_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
+  if (token == 0) { return 401; }
+  if (!raize_str_eq(*token, APP_TOKEN)) { return 401; }
+  if (principal != 0) { *principal = (rawptr)ctx; }
+  return 200;
+}
+
+fn app_terminal(ctx: RzContext*) -> int32 {
+  var path: string = raize_str_empty();
+  if (ctx->req != 0) { path = ctx->req->path; }
+  if (raize_str_eq(path, "/ok")) { return rz_ctx_text(ctx, 200, "ok\n"); }
+  if (raize_str_eq(path, "/secret")) {
+    if (ctx->user == 0) { return rz_ctx_text(ctx, 500, "no principal\n"); }
+    return rz_ctx_text(ctx, 200, "secret\n");
+  }
+  if (raize_str_eq(path, "/boom")) {
+    raize_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
+    ctx->resp->status = 500;
+    ctx->status = 500;
+    return 500;
+  }
+  if (raize_str_eq(path, "/inject")) {
+    var rc: int32 = rz_hdr_set(ctx->resp, "X-Echo", "v\r\nX-Injected: 1");
+    if (rc != RZ_HDR_REJECTED) { return rz_ctx_text(ctx, 500, "guard did not fire\n"); }
+    return rz_ctx_text(ctx, 200, "refused\n");
+  }
+  if (raize_str_eq(path, "/arena")) {
+    var used: int64 = 0;
+    if (ctx->arena != 0) { used = rz_arena_used(ctx->arena); }
+    var b: RaizeBuf* = raize_buf_new_cap(64);
+    if (b == 0) { return rz_ctx_text(ctx, 500, "oom\n"); }
+    raize_buf_add_int(b, used);
+    raize_buf_add(b, "\n");
+    // rz_ctx_text copies the body into the response before returning
+    var st: int32 = rz_ctx_text(ctx, 200, raize_buf_str(b));
+    raize_buf_free(b);
+    return st;
+  }
+  return rz_ctx_text(ctx, 404, "not found\n");
+}
+
+// argv: /proc/self/cmdline -> "--port N" (no argv surface on Linux)
+fn read_port(dflt: int32) -> int32 {
+  var fp: cstring = fopen("/proc/self/cmdline", "rb");
+  if (fp == 0) { return dflt; }
+  var buf: uint8[2048];
+  var n: int64 = fread((cstring)&buf[0], 1, 2048, fp);
+  var frc: int32 = fclose(fp);
+  if (frc != 0) { return dflt; }
+  if (n <= 0) { return dflt; }
+  var port: int32 = dflt;
+  var i: int64 = 0;
+  var start: int64 = 0;
+  var want: bool = false;
+  while (i < n) {
+    if (buf[i] == 0) {
+      var a: string = raize_str_view(&buf[start], i - start);
+      if (want) {
+        var v: int64 = raize_str_to_int(a);
+        if (v > 0 && v < 65536) { port = (int32)v; }
+        want = false;
+      } else if (raize_str_eq(a, "--port")) {
+        want = true;
+      }
+      start = i + 1;
+    }
+    i = i + 1;
+  }
+  return port;
+}
+
+fn main() -> int32 {
+  var port: int32 = read_port(APP_PORT);
+
+  var rec: RzRecover* = rz_recover_new();
+  var log: RzLog* = rz_log_new();
+  var cors: RzCors* = rz_cors_new();
+  var authn: RzAuth* = rz_auth_new();
+  if (rec == 0 || log == 0 || cors == 0 || authn == 0) {
+    println("mwapp: allocation failed");
+    return 1;
+  }
+  var rc: int32 = rz_recover_use(rec);
+  rc = rz_log_use(log);
+  rc = rz_cors_set_origin(cors, APP_ORIGIN);
+  rc = rz_cors_set_credentials(cors, true);
+  rc = rz_cors_use(cors);
+  rc = rz_auth_set_realm(authn, APP_REALM);
+  rc = rz_auth_set_verifier(authn, &app_verify);
+  rc = rz_auth_use(authn);
+  if (rc != 0) {
+    println("mwapp: middleware config failed {rc}");
+    return 2;
+  }
+
+  g_chain = rz_chain_new();
+  if (g_chain == 0) { return 3; }
+  var c0: int32 = rz_chain_add(g_chain, "recover", &rz_mw_recover);
+  var c1: int32 = rz_chain_add(g_chain, "logging", &rz_mw_logging);
+  var c2: int32 = rz_chain_add(g_chain, "cors", &rz_mw_cors);
+  var c3: int32 = rz_chain_add(g_chain, "auth", &rz_mw_auth);
+  var c4: int32 = rz_chain_set_terminal(g_chain, &app_terminal);
+  if (c0 != 0 || c1 != 0 || c2 != 0 || c3 != 0 || c4 != 0) {
+    println("mwapp: chain build {c0} {c1} {c2} {c3} {c4}");
+    return 4;
+  }
+  var handler: fn(RzContext*) -> int32 = rz_chain_handler(g_chain);
+  if (handler == (fn(RzContext*) -> int32)0) {
+    println("mwapp: chain mount failed");
+    return 5;
+  }
+
+  var opts: RzServerOpts;
+  opts.port = port;
+  opts.workers = 2;
+  opts.read_timeout_ms = 5000;
+  opts.keepalive_max = 100;
+  opts.buf_cap = 16384;
+  opts.backlog = 64;
+  var srv: RzServer* = rz_server_new(opts);
+  if (srv == 0) { println("mwapp: server_new failed"); return 6; }
+  var sh: int32 = rz_server_set_handler(srv, handler);
+  if (sh != 0) { println("mwapp: set_handler failed {sh}"); return 7; }
+
+  println("mwapp: listening on 127.0.0.1:{port}");
+  var run: int32 = rz_server_run(srv);
+  rz_server_free(srv);
+  rz_chain_free(g_chain);
+  rz_recover_free(rec);
+  rz_log_free(log);
+  rz_cors_free(cors);
+  rz_auth_free(authn);
+  return run;
+}

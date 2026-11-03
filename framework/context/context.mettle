@@ -1,0 +1,192 @@
+// raize/context — the aggregator and the per-request context.
+//
+// This is the only file the rest of the framework imports:
+//
+//     import "framework/context/context";
+//
+// It pulls in arena, header, request and response (Mettle imports are
+// transitive, so query/json/date come with them) and defines RzContext, the
+// per-request object a handler receives.
+//
+// Division of labour, so `context` does not become a god module:
+//   RzRequest   wire data: verb, target, path, query, headers, body
+//   RzResponse  wire data: status, headers, body builder
+//   RzContext   per-request services: the two pointers above, the arena,
+//               a store handle, a user handle, and the status/byte counters
+//               the logging middleware reads after the handler returns.
+//
+// `context` imports nothing above it. It never knows what a router, a
+// middleware chain, a store or a template is; those are `rawptr` here and are
+// typed by their owning module.
+
+import "arena";
+import "header";
+import "request";
+import "response";
+
+export struct RzContext {
+  req: RzRequest*;
+  resp: RzResponse*;
+  arena: RzArena*;
+  store: rawptr;          // framework/orm's RaizeStore*, typed there
+  user: rawptr;           // auth middleware's principal, typed there
+  status: int32;          // set by the handler, read by the log frame
+  bytes_written: int64;   // set by the server after the write
+  aborted: bool;          // a middleware refused: do not call the handler
+}
+
+// Binds a context to a request/response pair. `resp->arena` is set here, once,
+// so every header a handler sets is copied and cannot alias a stack buffer.
+export fn rz_ctx_init(ctx: RzContext*, req: RzRequest*, resp: RzResponse*, arena: RzArena*) {
+  if (ctx == 0) { return; }
+  ctx->req = req;
+  ctx->resp = resp;
+  ctx->arena = arena;
+  ctx->store = 0;
+  ctx->user = 0;
+  ctx->status = 0;
+  ctx->bytes_written = 0;
+  ctx->aborted = false;
+  if (resp != 0) {
+    resp->arena = arena;
+  }
+}
+
+// The status is tracked twice on purpose: `resp->status` is what goes on the
+// wire, `ctx->status` is what the outer logging frame reads even when a
+// handler forged the response itself.
+fn rz_ctx_mark(ctx: RzContext*, status: int32) {
+  if (ctx == 0) { return; }
+  ctx->status = status;
+}
+
+export fn rz_ctx_text(ctx: RzContext*, status: int32, body: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_text(ctx->resp, status, body);
+}
+
+export fn rz_ctx_html(ctx: RzContext*, status: int32, body: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_html(ctx->resp, status, body);
+}
+
+export fn rz_ctx_json(ctx: RzContext*, status: int32, body: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_json(ctx->resp, status, body);
+}
+
+export fn rz_ctx_bytes(ctx: RzContext*, status: int32, ct: string, body: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_bytes(ctx->resp, status, ct, body);
+}
+
+export fn rz_ctx_empty(ctx: RzContext*, status: int32) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_empty(ctx->resp, status);
+}
+
+export fn rz_ctx_redirect(ctx: RzContext*, status: int32, location: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  rz_ctx_mark(ctx, status);
+  return rz_resp_redirect(ctx->resp, status, location);
+}
+
+export fn rz_ctx_not_found(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 404, "not found\n");
+}
+
+// A middleware refuses by aborting: the server sees `aborted` and skips the
+// handler, but still writes whatever response was built.
+export fn rz_ctx_abort(ctx: RzContext*, status: int32) -> int32 {
+  if (ctx == 0) { return -1; }
+  ctx->aborted = true;
+  rz_ctx_mark(ctx, status);
+  if (ctx->resp != 0) { ctx->resp->status = status; }
+  return 0;
+}
+
+export fn rz_ctx_is_json(ctx: RzContext*) -> bool {
+  if (ctx == 0) { return false; }
+  return rz_req_is_json(ctx->req);
+}
+
+// Convenience over the query accessors; the arena is the context's.
+export fn rz_ctx_query(ctx: RzContext*, name: string) -> string {
+  if (ctx == 0 || ctx->req == 0) { return raize_str_empty(); }
+  return rz_query_get(ctx->req->query, name, ctx->arena);
+}
+
+export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
+  if (ctx == 0 || ctx->req == 0) { return false; }
+  var v: string = rz_query_get(ctx->req->query, name, ctx->arena);
+  if (v.length == 0) { return false; }
+  var n: int64 = raize_str_to_int(v);
+  *out = n;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+@test fn t_rz_ctx_lifecycle() -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 1; }
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { rz_arena_free(arena); return 2; }
+  var resp: RzResponse* = rz_response_new();
+  if (resp == 0) { rz_arena_free(arena); return 3; }
+  var ctx: RzContext;
+  rz_ctx_init(&ctx, &req, resp, arena);
+  if (ctx.req != &req) { rz_response_free(resp); rz_arena_free(arena); return 4; }
+  if (resp->arena != arena) { rz_response_free(resp); rz_arena_free(arena); return 5; }
+  if (ctx.status != 0) { rz_response_free(resp); rz_arena_free(arena); return 6; }
+
+  if (rz_ctx_text(&ctx, 201, "made") != 0) { rz_response_free(resp); rz_arena_free(arena); return 7; }
+  if (resp->status != 201) { rz_response_free(resp); rz_arena_free(arena); return 8; }
+  if (ctx.status != 201) { rz_response_free(resp); rz_arena_free(arena); return 9; }
+  if (rz_resp_body_len(resp) != 4) { rz_response_free(resp); rz_arena_free(arena); return 10; }
+  if (!raize_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_TEXT)) { rz_response_free(resp); rz_arena_free(arena); return 11; }
+
+  if (rz_ctx_json(&ctx, 200, "[]") != 0) { rz_response_free(resp); rz_arena_free(arena); return 12; }
+  if (!raize_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_JSON)) { rz_response_free(resp); rz_arena_free(arena); return 13; }
+
+  if (rz_ctx_not_found(&ctx) != 0) { rz_response_free(resp); rz_arena_free(arena); return 14; }
+  if (resp->status != 404) { rz_response_free(resp); rz_arena_free(arena); return 15; }
+
+  if (rz_ctx_abort(&ctx, 403) != 0) { rz_response_free(resp); rz_arena_free(arena); return 16; }
+  if (!ctx.aborted) { rz_response_free(resp); rz_arena_free(arena); return 17; }
+  if (resp->status != 403) { rz_response_free(resp); rz_arena_free(arena); return 18; }
+
+  // query convenience reads the raw query string through the arena
+  req.query = "limit=25&q=hi+there";
+  var limit: int64 = 0;
+  if (!rz_ctx_query_int(&ctx, "limit", &limit)) { rz_response_free(resp); rz_arena_free(arena); return 19; }
+  if (limit != 25) { rz_response_free(resp); rz_arena_free(arena); return 20; }
+  if (!raize_str_eq(rz_ctx_query(&ctx, "q"), "hi there")) { rz_response_free(resp); rz_arena_free(arena); return 21; }
+
+  rz_response_free(resp);
+  rz_arena_free(arena);
+  return 0;
+}
+
+@test fn t_rz_ctx_response_reset_reuse() -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 1; }
+  var resp: RzResponse* = rz_response_new();
+  if (resp == 0) { rz_arena_free(arena); return 2; }
+  rz_resp_text(resp, 200, "one");
+  rz_response_reset(resp);
+  if (resp->status != 200) { rz_response_free(resp); rz_arena_free(arena); return 3; }
+  if (rz_resp_body_len(resp) != 0) { rz_response_free(resp); rz_arena_free(arena); return 4; }
+  rz_resp_text(resp, 500, "two");
+  if (!raize_str_starts(raize_buf_str(resp->body), "two")) { rz_response_free(resp); rz_arena_free(arena); return 5; }
+  rz_response_free(resp);
+  rz_arena_free(arena);
+  return 0;
+}

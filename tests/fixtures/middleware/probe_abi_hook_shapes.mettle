@@ -1,0 +1,63 @@
+// probe_abi_hook_shapes — the hook signature every middleware uses, compiled
+// and run for real.
+//
+// Both hooks are called through function pointers held in a config struct, from
+// a module that did not define them, and both callees make cross-module calls
+// of their own. Pointer arguments, int32 returns — no aggregate anywhere in the
+// signature. This is the shape auth.mettle ships
+// (`fn(RzRequest*, string*) -> int32` extractor,
+//  `fn(RzContext*, string*, rawptr*) -> int32` verifier).
+//
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/probe_abi_hook_shapes.mettle -o build/probe_abi_hook_shapes
+//   ./build/probe_abi_hook_shapes
+//   -> found=1 token=[good] verdict=200 principal=1
+import "std/io";
+import "std/mem";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/middleware/headers";
+
+struct Hooks {
+  extract: fn(RzRequest*, string*) -> int32;
+  verify: fn(RzContext*, string*, rawptr*) -> int32;
+}
+
+fn x_bearer(req: RzRequest*, out: string*) -> int32 {
+  var v: string = rz_hdr_in_get(req, "Authorization");
+  if (!raize_str_starts(v, "Bearer ")) { return 0; }
+  out->chars = v.chars + 7;
+  out->length = v.length - 7;
+  return 1;
+}
+
+fn x_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
+  if (token == 0) { return 401; }
+  if (!raize_str_eq(*token, "good")) { return 401; }
+  if (principal != 0) { *principal = (rawptr)ctx; }
+  return 200;
+}
+
+fn main() -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 1; }
+  defer rz_arena_free(arena);
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { return 2; }
+  req.headers[0].name = "Authorization";
+  req.headers[0].value = "Bearer good";
+  req.header_count = 1;
+  var resp: RzResponse* = rz_response_new();
+  if (resp == 0) { return 3; }
+  defer rz_response_free(resp);
+  var ctx: RzContext;
+  rz_ctx_init(&ctx, &req, resp, arena);
+  var h: Hooks;
+  h.extract = &x_bearer;
+  h.verify = &x_verify;
+  var token: string = raize_str_empty();
+  var found: int32 = h.extract(&req, &token);
+  var principal: rawptr = 0;
+  var verdict: int32 = h.verify(&ctx, &token, &principal);
+  println("found={found} token=[{token}] verdict={verdict} principal={(int64)principal}");
+  return 0;
+}

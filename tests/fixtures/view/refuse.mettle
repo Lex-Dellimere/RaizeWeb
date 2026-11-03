@@ -1,0 +1,21 @@
+// A startup-refusal fixture: it loads a broken template and must exit non-zero
+// *before* a socket is opened. Built and run as evidence for template rule 6.
+import "std/io";
+import "framework/str/str";
+import "framework/template/template";
+
+fn main() -> int32 {
+  var t: RzTemplate* = rz_template_new();
+  if (t == 0) { println("refuse: out of memory"); return 1; }
+  var decls: RzVarMap;
+  rz_vars_init(&decls);
+  var rc: int32 = rz_template_load(t, "tests/fixtures/view/templates/broken.html", &decls);
+  if (rc != 0) {
+    println("refuse: template rejected: {rz_template_strerror(rc)} at byte {rz_template_error_at(t)}");
+    rz_template_free(t);
+    return 2;
+  }
+  println("refuse: BROKEN TEMPLATE WAS ACCEPTED");
+  rz_template_free(t);
+  return 3;
+}

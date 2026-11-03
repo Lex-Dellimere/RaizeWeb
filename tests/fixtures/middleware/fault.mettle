@@ -1,0 +1,67 @@
+// tests/fixtures/middleware/fault — the crash this middleware cannot recover.
+//
+// Recovery in raize means a *request-scoped arena* (freed by the connection
+// loop on every exit path), a handler's *error return* turned into a 500, and
+// a generic body. It does not mean "survive a fault". Mettle has no signals or
+// try/catch in the language; a wild write is fatal, the process dies, and no
+// middleware of ours runs.
+//
+// This fixture mounts the recovery middleware, then writes through a wild
+// pointer *inside the handler*. Two outcomes are observed, both fatal:
+//
+//   * at a null address the codegen's own null check turns it into
+//     "Fatal error: null pointer dereference" (exit 1);
+//   * at an unmapped non-null address the runtime's signal handler reports
+//     "Unhandled runtime signal 11" and the process dies with exit 139.
+//
+// In both cases the recovery middleware never gets control (the line after
+// rz_chain_serve is never printed) and the supervisor — not this framework —
+// is what makes the service come back.
+//
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/fault.mettle -o build/rz_mw_fault
+//   ./build/rz_mw_fault ; echo "exit=$?"     # -> Unhandled runtime signal 11 ... exit=139
+
+import "std/io";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/middleware/chain";
+import "../../../framework/middleware/recover";
+
+var g_chain: RzChain* = 0;
+
+fn fault_terminal(ctx: RzContext*) -> int32 {
+  println("handler: about to write through a wild pointer");
+  var p: int32* = (int32*)16;   // unmapped, not null: a raw SIGSEGV
+  *p = 1;                       // fatal, not an error return
+  return rz_ctx_text(ctx, 200, "unreachable\n");
+}
+
+fn main() -> int32 {
+  var rec: RzRecover* = rz_recover_new();
+  if (rec == 0) { return 1; }
+  var urc: int32 = rz_recover_use(rec);
+  if (urc != 0) { return 2; }
+  g_chain = rz_chain_new();
+  if (g_chain == 0) { return 3; }
+  var a0: int32 = rz_chain_add(g_chain, "recover", &rz_mw_recover);
+  var a1: int32 = rz_chain_set_terminal(g_chain, &fault_terminal);
+  if (a0 != 0 || a1 != 0) { return 4; }
+  if (rz_chain_handler(g_chain) == (fn(RzContext*) -> int32)0) { return 5; }
+
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 6; }
+  defer rz_arena_free(arena);
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { return 7; }
+  var resp: RzResponse* = rz_response_new();
+  if (resp == 0) { return 8; }
+  defer rz_response_free(resp);
+  var ctx: RzContext;
+  rz_ctx_init(&ctx, &req, resp, arena);
+  req.verb = "GET";
+  req.path = "/crash";
+  println("main: entering the chain with recovery mounted");
+  var st: int32 = rz_chain_serve(g_chain, &ctx);
+  println("main: UNREACHABLE if the fault was fatal (st={st})");
+  return 0;
+}

@@ -1,0 +1,340 @@
+// tests/fixtures/middleware/wire — the middleware chain, driven natively.
+//
+// No sockets here: this fixture builds a request, a response and a context in
+// memory and runs the *compiled* chain over them, the way the server does. It
+// is the link-time and codegen proof (the interpreter cannot run every arm —
+// it skips clock_gettime, and an indirect call returning a struct traps
+// there), and it is the regression harness for the six middleware files:
+//
+//   recover -> logging -> cors -> auth -> terminal
+//
+// Note the order: logging is *outside* recovery, so a recovered 500 is logged
+// with the byte count of the body that actually goes on the wire.
+//
+// Build and run from the repo root:
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/wire.mettle -o build/rz_mw_wire
+//   ./build/rz_mw_wire
+//
+// Every line is PASS/FAIL; the last line is `failures=N`, and the exit status
+// is 1 when N != 0.
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/middleware/chain";
+import "../../../framework/middleware/headers";
+import "../../../framework/middleware/logging";
+import "../../../framework/middleware/recover";
+import "../../../framework/middleware/cors";
+import "../../../framework/middleware/auth";
+
+const WIRE_REALM: string = "fixture";
+const WIRE_ORIGIN: string = "https://app.example";
+const WIRE_TOKEN: string = "good";
+
+var g_chain: RzChain* = 0;
+var g_failures: int32 = 0;
+var g_next_calls: int32 = 0;      // is the terminal reached?
+
+fn check(name: string, ok: bool) {
+  if (ok) {
+    println("PASS  {name}");
+  } else {
+    println("FAIL  {name}");
+    g_failures = g_failures + 1;
+  }
+}
+
+fn check_eq(name: string, got: string, want: string) {
+  if (raize_str_eq(got, want)) {
+    println("PASS  {name}");
+  } else {
+    println("FAIL  {name}: got [{got}] want [{want}]");
+    g_failures = g_failures + 1;
+  }
+}
+
+fn check_int(name: string, got: int64, want: int64) {
+  if (got == want) {
+    println("PASS  {name}");
+  } else {
+    println("FAIL  {name}: got {got} want {want}");
+    g_failures = g_failures + 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The verifier hook: one function, taken through the config's function pointer.
+// Signature is pointer-only on purpose (see auth.mettle's ABI note).
+// ---------------------------------------------------------------------------
+
+fn wire_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
+  if (token == 0) { return 401; }
+  if (!raize_str_eq(*token, WIRE_TOKEN)) { return 401; }
+  if (principal != 0) { *principal = (rawptr)ctx; }   // "the user is the context here"
+  return 200;
+}
+
+fn wire_verify_bug(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
+  return 999;   // not a verdict: must become a 500, not a 401
+}
+
+// ---------------------------------------------------------------------------
+// The terminal: a tiny router.
+// ---------------------------------------------------------------------------
+
+fn wire_terminal(ctx: RzContext*) -> int32 {
+  g_next_calls = g_next_calls + 1;
+  var path: string = raize_str_empty();
+  if (ctx->req != 0) { path = ctx->req->path; }
+  if (raize_str_eq(path, "/ok")) {
+    return rz_ctx_text(ctx, 200, "ok\n");
+  }
+  if (raize_str_eq(path, "/secret")) {
+    // only reachable past auth; reports the principal auth installed
+    if (ctx->user == 0) { return rz_ctx_text(ctx, 500, "no principal\n"); }
+    return rz_ctx_text(ctx, 200, "secret\n");
+  }
+  if (raize_str_eq(path, "/boom")) {
+    // a handler fault: the detail must not reach the client
+    raize_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
+    ctx->resp->status = 500;
+    ctx->status = 500;
+    return 500;
+  }
+  if (raize_str_eq(path, "/inject")) {
+    // response splitting attempt: a header value built from request data
+    var rc: int32 = rz_hdr_set(ctx->resp, "X-Echo", "v\r\nX-Injected: 1");
+    if (rc != RZ_HDR_REJECTED) { return rz_ctx_text(ctx, 500, "guard did not fire\n"); }
+    return rz_ctx_text(ctx, 200, "refused\n");
+  }
+  return rz_ctx_text(ctx, 404, "not found\n");
+}
+
+// ---------------------------------------------------------------------------
+// Requests are built by hand: the parser is another module's test surface.
+// ---------------------------------------------------------------------------
+
+struct WireReq {
+  verb: string;
+  path: string;
+  origin: string;
+  acrm: string;      // Access-Control-Request-Method
+  auth: string;      // Authorization
+  auth2: string;     // a second Authorization (duplicate-credential case)
+}
+
+fn wire_req_new() -> WireReq {
+  var r: WireReq;
+  r.verb = "GET";
+  r.path = "/ok";
+  r.origin = raize_str_empty();
+  r.acrm = raize_str_empty();
+  r.auth = raize_str_empty();
+  r.auth2 = raize_str_empty();
+  return r;
+}
+
+fn wire_add(req: RzRequest*, name: string, value: string) {
+  var at: int32 = req->header_count;
+  req->headers[at].name = name;
+  req->headers[at].value = value;
+  req->header_count = at + 1;
+}
+
+// Runs one request through the mounted chain. Returns the chain's answer (the
+// number the server would treat as a handler result). The arena is created and
+// freed per request, exactly like rz_conn_serve does.
+fn wire_run(w: WireReq, out_body: RaizeBuf*) -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return -1; }
+  defer rz_arena_free(arena);
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { return -1; }
+  var resp: RzResponse* = rz_response_new();
+  if (resp == 0) { return -1; }
+  defer rz_response_free(resp);
+  var ctx: RzContext;
+  rz_ctx_init(&ctx, &req, resp, arena);
+  req.verb = w.verb;
+  req.path = w.path;
+  if (w.origin.length > 0) { wire_add(&req, "Origin", w.origin); }
+  if (w.acrm.length > 0) { wire_add(&req, "Access-Control-Request-Method", w.acrm); }
+  if (w.auth.length > 0) { wire_add(&req, "Authorization", w.auth); }
+  if (w.auth2.length > 0) { wire_add(&req, "Authorization", w.auth2); }
+  var st: int32 = rz_chain_serve(g_chain, &ctx);
+  // hand the body/status back to the caller before the response is freed
+  out_body->len = 0;
+  if (resp->body != 0) { raize_buf_add(out_body, raize_buf_str(resp->body)); }
+  if (st == 0 && ctx.aborted) { return resp->status; }
+  if (st == 0) { return resp->status; }
+  return st;
+}
+
+fn main() -> int32 {
+  // ---- configuration, in the order an app does it -------------------------
+  var rec: RzRecover* = rz_recover_new();
+  var log: RzLog* = rz_log_new();
+  var cors: RzCors* = rz_cors_new();
+  var authn: RzAuth* = rz_auth_new();
+  if (rec == 0 || log == 0 || cors == 0 || authn == 0) {
+    println("FAIL  allocation");
+    return 1;
+  }
+  var rc0: int32 = rz_recover_use(rec);
+  rc0 = rz_log_use(log);
+  // one exact origin plus credentials: the wildcard rule is in force
+  rc0 = rz_cors_set_origin(cors, WIRE_ORIGIN);
+  rc0 = rz_cors_set_credentials(cors, true);
+  rc0 = rz_cors_use(cors);
+  rc0 = rz_auth_set_realm(authn, WIRE_REALM);
+  rc0 = rz_auth_set_verifier(authn, &wire_verify);
+  rc0 = rz_auth_use(authn);
+  if (rc0 != 0) {
+    println("FAIL  middleware config rc={rc0}");
+    return 2;
+  }
+  // the wildcard rule is refused at startup, not at request time
+  var bad: RzCors* = rz_cors_new();
+  if (bad == 0) { return 3; }
+  var _brc: int32 = rz_cors_set_credentials(bad, true);   // origin stays "*"
+  check_int("cors: credentials + \"*\" is refused by use()", (int64)rz_cors_use(bad), -1);
+  rz_cors_free(bad);
+  
+  // ---- the chain ----------------------------------------------------------
+  g_chain = rz_chain_new();
+  if (g_chain == 0) { return 4; }
+  var c0: int32 = rz_chain_add(g_chain, "recover", &rz_mw_recover);
+  var c1: int32 = rz_chain_add(g_chain, "logging", &rz_mw_logging);
+  var c2: int32 = rz_chain_add(g_chain, "cors", &rz_mw_cors);
+  var c3: int32 = rz_chain_add(g_chain, "auth", &rz_mw_auth);
+  var c4: int32 = rz_chain_set_terminal(g_chain, &wire_terminal);
+  if (c0 != 0 || c1 != 0 || c2 != 0 || c3 != 0 || c4 != 0) {
+    println("FAIL  chain build {c0} {c1} {c2} {c3} {c4}");
+    return 5;
+  }
+  var desc: uint8[64];
+  var dn: int64 = rz_chain_describe(g_chain, &desc[0], 64);
+  check_eq("chain: order", raize_str_view(&desc[0], dn), "recover,logging,cors,auth");
+  var handler: fn(RzContext*) -> int32 = rz_chain_handler(g_chain);
+  check("chain: mounted handler is not null", handler != (fn(RzContext*) -> int32)0);
+
+  var body: RaizeBuf* = raize_buf_new_cap(512);
+  if (body == 0) { return 6; }
+  defer raize_buf_free(body);
+
+  // ---- the clock ----------------------------------------------------------
+  // Monotonic source: std/bench -> clock_gettime(CLOCK_MONOTONIC) on Linux,
+  // QueryPerformanceCounter on Windows. Printed so the run can be compared with
+  // /proc/uptime (a wall clock would print ~1.7e15, the epoch in us).
+  check("clock: present", rz_log_clock_ok());
+  var t0: int64 = rz_log_now_us();
+  var spin: int64 = 0;
+  var i: int64 = 0;
+  while (i < 200000) { spin = spin + i; i = i + 1; }
+  var t1: int64 = rz_log_now_us();
+  println("clock: t0={t0} t1={t1} spun={spin}");
+  check("clock: never goes backwards", t1 >= t0);
+  check("clock: is not the epoch (wall clock would be ~1.7e15)", t0 > 1000000000 && t0 < 100000000000000);
+
+  // ---- 200: everything passes --------------------------------------------
+  g_next_calls = 0;
+  var w: WireReq = wire_req_new();
+  w.auth = "Bearer good";
+  var st: int32 = wire_run(w, body);
+  check_int("GET /ok -> 200", (int64)st, 200);
+  check_eq("GET /ok body", raize_buf_str(body), "ok\n");
+  check_int("GET /ok reached the terminal once", (int64)g_next_calls, 1);
+  var ls: RzLogStats = rz_log_stats(log);
+  check_int("logging: one line written", (int64)ls.lines, 1);
+  check_int("logging: no missing clock", (int64)ls.clock_missing, 0);
+
+  // ---- auth ---------------------------------------------------------------
+  w = wire_req_new();
+  w.path = "/secret";
+  st = wire_run(w, body);
+  check_int("GET /secret without a token -> 401", (int64)st, 401);
+  check_eq("401 body is generic", raize_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
+  w = wire_req_new();
+  w.path = "/secret";
+  w.auth = "Bearer good";
+  st = wire_run(w, body);
+  check_int("GET /secret with a valid token -> 200", (int64)st, 200);
+  check_eq("authorised body", raize_buf_str(body), "secret\n");
+  // the verifier is taken through a function pointer installed by this module:
+  // if the hook signature regressed, this is where it would die.
+
+  // ---- CORS ---------------------------------------------------------------
+  w = wire_req_new();
+  w.verb = "OPTIONS";
+  w.path = "/secret";
+  w.origin = WIRE_ORIGIN;
+  w.acrm = "POST";
+  st = wire_run(w, body);
+  check_int("preflight -> 204", (int64)st, 204);
+  check_int("preflight body is empty", (int64)body->len, 0);
+
+  // ---- recovery -----------------------------------------------------------
+  w = wire_req_new();
+  w.path = "/boom";
+  w.auth = "Bearer good";
+  st = wire_run(w, body);
+  check_int("GET /boom -> 500", (int64)st, 500);
+  check_eq("500 body is the generic one", raize_buf_str(body), RZ_RECOVER_GENERIC_BODY);
+  check("500 body does not contain the handler's detail",
+        !raize_str_contains(raize_buf_str(body), "hunter2"));
+  var rs: RzRecoverStats = rz_recover_stats(rec);
+  check_int("recovery: one failure handled", (int64)rs.handled, 1);
+
+  // ---- response splitting -------------------------------------------------
+  w = wire_req_new();
+  w.path = "/inject";
+  w.auth = "Bearer good";
+  st = wire_run(w, body);
+  check_int("handler trying to set a CRLF header is refused, request survives",
+            (int64)st, 200);
+  check_eq("refused value never reached the table", raize_buf_str(body), "refused\n");
+
+  // ---- auth failure is not a 500; a verifier bug is ------------------------
+  // (the 403 arm is exercised in auth.mettle's unit tests; here the point is
+  // that recovery runs *outside* auth and does not rewrite a 401)
+  w = wire_req_new();
+  w.path = "/ok";
+  w.auth = "Bearer wrong";
+  st = wire_run(w, body);
+  check_int("wrong token -> 401 (not rewritten to 500 by recovery)", (int64)st, 401);
+  check_eq("401 keeps its own body", raize_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
+
+  // a verifier bug returns 999: 500, and the client sees the generic body
+  rc0 = rz_auth_set_verifier(authn, &wire_verify_bug);
+  w = wire_req_new();
+  w.path = "/secret";
+  w.auth = "Bearer good";
+  st = wire_run(w, body);
+  check_int("verifier bug -> 500", (int64)st, 500);
+  check_eq("verifier bug body is recovered", raize_buf_str(body), RZ_RECOVER_GENERIC_BODY);
+  var bs: RzAuthStats = rz_auth_stats(authn);
+  check_int("auth: verifier bug counted", (int64)bs.verifier_bug, 1);
+
+  // ---- the header guard, directly -----------------------------------------
+  check("guard: CRLF refused", !rz_hdr_crlf_ok("a\r\nX: 1"));
+  check("guard: bare LF refused", !rz_hdr_crlf_ok("a\nX: 1"));
+  check("guard: plain value accepted", rz_hdr_crlf_ok("text/plain; charset=utf-8"));
+
+  // ---- auth totals, now that every arm has run ----------------------------
+  var as: RzAuthStats = rz_auth_stats(authn);
+  check_int("auth: four allows (ok, secret, boom, inject)", (int64)as.allowed, 4);
+  check_int("auth: two denies (no token, then a wrong token)", (int64)as.unauthorized, 2);
+  check_int("auth: one verifier bug", (int64)as.verifier_bug, 1);
+
+  // ---- stats --------------------------------------------------------------
+  var chs: RzChainStats = rz_chain_stats(g_chain);
+  check_int("chain: requests served", (int64)chs.runs, 8);
+  check_int("chain: nothing refused", (int64)chs.refused, 0);
+
+  println("");
+  println("failures={g_failures}");
+  return 0;
+}

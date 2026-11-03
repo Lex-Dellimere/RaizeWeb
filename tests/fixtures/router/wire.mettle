@@ -1,0 +1,114 @@
+// raize/router wiring fixture — the whole seam without a socket.
+//
+// This is the reference wiring the server must reproduce: build a router,
+// register routes (optionally through a group), then per request build an
+// RzRequest/RzResponse/RzContext and call rz_router_handle. It compiles as a
+// normal program, so it is the link-time proof that router + context agree:
+//
+//   ./mettle-build/bin/mettle --build tests/fixtures/router/wire.mettle -o build/router-wire
+//   ./build/router-wire
+//
+// The first router runs in the production mode the server uses
+// (rz_router_set_path_decoded(rt, true): the parser decoded and normalized the
+// path); the second runs in fallback mode, where the router decodes itself.
+// Exit status is the number of failed expectations.
+//
+// Build it as a normal or --release program. (A --safe build of any Mettle
+// program that stores a string view into a struct field through a pointer
+// traps in the safety runtime's identity tracking, before this router does
+// anything; see the router report's residual risks.)
+import "std/io";
+import "std/mem";
+import "../../../framework/str/str";
+import "../../../framework/router/router";
+import "../../../framework/context/context";
+
+fn h_home(c: RzContext*) -> int32 {
+  return 200;
+}
+
+fn h_hello(c: RzContext*) -> int32 {
+  var who: string = c->req->params[0].value;
+  if (!raize_str_eq(who, "world")) { return 500; }
+  return 200;
+}
+
+fn h_files(c: RzContext*) -> int32 {
+  return 200;
+}
+
+fn h_form(c: RzContext*) -> int32 {
+  return 204;
+}
+
+fn h_echo(c: RzContext*) -> int32 {
+  println("handler ran inside dispatch");
+  return 200;
+}
+
+fn run_req(rt: RzRouter*, verb: string, path: string) -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  defer rz_arena_free(arena);
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { return -1; }
+  req.verb = verb;
+  req.path = path;
+  req.target = path;
+  var res: RzResponse;
+  res.status = 0;
+  res.header_count = 0;
+  res.close_after = false;
+  res.arena = arena;
+  var ctx: RzContext;
+  ctx.req = &req;
+  ctx.resp = &res;
+  ctx.arena = arena;
+  ctx.status = 0;
+  var st: int32 = rz_router_handle(rt, &ctx);
+  var allow: string = rz_resp_header_get(&res, "Allow");
+  println("{verb} {path} -> {st} params={req.param_count} allow=[{allow}]");
+  return st;
+}
+
+fn main() -> int32 {
+  var rt: RzRouter* = rz_router_new();
+  if (rt == 0) { println("router alloc failed"); return 1; }
+  defer rz_router_free(rt);
+  // The server's parser decodes + normalizes, so production runs in decoded
+  // mode. This harness mirrors that.
+  rz_router_set_path_decoded(rt, true);
+  if (rz_router_add(rt, "GET", "/", &h_home) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &h_hello) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/files/*path", &h_files) != RZ_E_OK) { return 4; }
+  if (rz_router_add(rt, "POST", "/form", &h_form) != RZ_E_OK) { return 5; }
+  var g: RzGroup* = rz_router_group(rt, "/api");
+  if (g == 0) { return 6; }
+  if (rz_group_add(g, "POST", "/echo", &h_echo) != RZ_E_OK) { return 7; }
+  println("routes={rz_router_count(rt)} nodes={rz_router_nodes(rt)}");
+
+  var fail: int32 = 0;
+  if (run_req(rt, "GET", "/") != 200) { fail = fail + 1; }
+  if (run_req(rt, "GET", "/hello/world") != 200) { fail = fail + 1; }
+  if (run_req(rt, "GET", "/no/such/page") != 404) { fail = fail + 1; }
+  if (run_req(rt, "POST", "/") != 405) { fail = fail + 1; }
+  if (run_req(rt, "GET", "/files/a/b.txt") != 200) { fail = fail + 1; }
+  if (run_req(rt, "POST", "/form") != 204) { fail = fail + 1; }
+  if (run_req(rt, "POST", "/api/echo") != 200) { fail = fail + 1; }
+  // Decoded mode: the server already decoded, so a literal ".." segment is
+  // what the router must refuse; "%2e%2e" here is just three odd characters.
+  if (run_req(rt, "GET", "/a/../b") != 400) { fail = fail + 1; }
+  if (run_req(rt, "GET", "/a/%2e%2e") != 404) { fail = fail + 1; }
+  // Fallback mode: the router decodes, so "%2e%2e" becomes ".." and is refused.
+  var rt2: RzRouter* = rz_router_new();
+  if (rt2 == 0) { return 8; }
+  defer rz_router_free(rt2);
+  if (rz_router_add(rt2, "GET", "/hello/:name", &h_hello) != RZ_E_OK) { return 9; }
+  if (rz_router_add(rt2, "GET", "/files/*path", &h_files) != RZ_E_OK) { return 10; }
+  println("-- fallback (router decodes) --");
+  if (run_req(rt2, "GET", "/hello/world") != 200) { fail = fail + 1; }
+  if (run_req(rt2, "GET", "/a/%2e%2e") != 400) { fail = fail + 1; }
+  if (run_req(rt2, "GET", "/files/a%20b/c.txt") != 200) { fail = fail + 1; }
+  run_req(rt, "GET", "/api/echo");
+  println("failures={fail}");
+  return fail;
+}

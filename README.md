@@ -1,0 +1,112 @@
+# raize
+
+A web framework written in [Mettle](https://github.com/The-Mettle-Project/Mettle),
+a systems language with its own compiler, runtime and linker.
+
+raize is deliberately small and boring: a blocking TCP accept loop, a trie
+router, a fixed middleware chain, a template renderer, a static file server, and
+an interface seam for a custom database engine. It owns no event loop, no
+thread pool beyond its workers, and no dependencies at all — the runtime it
+links is Mettle's, which means no libc, no TLS library, no OpenSSL, and no
+`poll`/`epoll` (Mettle does not have them).
+
+## Layout
+
+```
+framework/
+├── server/      listener, worker pool, connection loop, HTTP/1.1 parser
+├── context/     request/response, headers, query, params, json, date, arena
+├── router/      trie router: exact > :param > *wildcard, 405 + Allow, groups
+├── middleware/  request pipeline, logging, limits, CORS, auth hook
+├── template/    HTML/text renderer with escaping and sections
+├── static/      file serving: mime types, ETag/304, traversal-safe
+├── orm/         storage vtable, unit of work, migrations hook (no database)
+├── config/      env + config, validated at startup, immutable after
+└── str/         the base layer: string views, owned copies, buffers, splitting
+examples/        runnable apps
+tests/           lint.sh, integration/*.sh, unit/*.mettle, fixtures/
+docs/            architecture review and design notes
+notes/           the Mettle language study this was built on
+```
+
+Dependency direction is one-way: `context` imports only `framework/str/str` and
+the Mettle standard library; nothing else may be imported by it. See
+`docs/architecture-review.md` for the full rules and the Phase 1 contract.
+
+## Build and run
+
+A locally built compiler is expected at `./mettle-build/bin/mettle`
+(see `notes/HOW-I-VERIFIED.md` for how it was built; `make` in a copy of the
+Mettle tree takes about 45 seconds).
+
+```bash
+make                 # build every example
+make lint            # layout rules: <=400 product lines/file, name prefixes
+make test            # lint + run @test functions in the interpreter (no codegen)
+make smoke           # start examples/hello, prove it over a real socket
+make run-hello       # build and run on :8080
+```
+
+Or by hand:
+
+```bash
+./mettle-build/bin/mettle --build examples/hello/app.mettle -o build/hello
+./build/hello
+curl -i http://127.0.0.1:8080/
+```
+
+## What the framework promises, and what it does not
+
+Promises:
+
+- Bounded everything: header bytes, header count, body bytes, request line,
+  keep-alive requests, middleware depth, route count, params. Exceeding a
+  bound is a 4xx with a reason, never a growing buffer.
+- A read timeout on every accepted socket, so one stalled client cannot pin a
+  worker.
+- Parser as a pure function (`rz_parse`), testable with `mettle test` and no
+  sockets.
+- Threads are always joined. Mettle leaks 1 MiB per detached thread
+  (`notes/issues/02-thread-close-detach-leak.md`), so detaching is forbidden
+  project-wide.
+
+Does not promise, because Mettle cannot:
+
+- TLS. Run raize behind a reverse proxy and trust `X-Forwarded-*` only when a
+  proxy is configured.
+- DNS. Bind by address.
+- HTTP/2, WebSockets via an event loop, chunked request bodies, or
+  `Expect: 100-continue` beyond the documented answer.
+- Catching a fault. A hardware fault is a process death in Mettle; the
+  framework turns error *returns* into 500s, and a supervisor restarts the
+  process.
+
+## Status
+
+All five phases are in, gated end to end:
+
+| Phase | State |
+|---|---|
+| 1 server + context + parser + router | done |
+| 2 middleware (chain, logging, limits, CORS, auth, recover) | done |
+| 3 template + static | done |
+| 4 orm hooks (vtable, unit of work, migrations) | done |
+| 5 config (defaults, env, validation) | done |
+
+Verified numbers (see `reports/status.md` for transcripts):
+
+```
+framework/      45 modules, 13 152 lines, LINT OK (<=400 product lines/file)
+unit            139 @test assertions across 22 files
+integration     SMOKE OK 7/7 · EDGES OK 11/11 · SITE OK 16/16
+                LEAK OK 2 000 requests, 0 kB growth (both apps)
+                CONFIG OK (env precedence, strict parse, 413 on the new cap)
+```
+
+```bash
+make integration     # lint, unit, then every HTTP suite over real sockets
+```
+
+Live orchestration log: `reports/director.md`. Independent evidence:
+`reports/status.md`. Plan and acceptance criteria:
+`docs/architecture-review.md`.

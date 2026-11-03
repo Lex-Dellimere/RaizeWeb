@@ -1,0 +1,27 @@
+// probe_abi_bad_return — EXPECTED TO CRASH: indirect call, aggregate return,
+// cross-module callee.
+//
+// A function pointer to an exported function in *another* module whose return
+// type is an aggregate (string) compiles and then dies at runtime: the indirect
+// call lands on a stub that jumps to address 0.
+//
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/probe_abi_bad_return.mettle -o build/probe_abi_bad_return
+//   ./build/probe_abi_bad_return
+//   -> direct call prints "Not Found"; the indirect call dies:
+//      Unhandled runtime signal 11 ... Faulting address 0x0 ... exit 139
+//
+// The same function called directly is fine — it is the *indirect* call across
+// modules that breaks — so a hook returning a string is a latent SIGSEGV.
+// The working alternative (pointer out-parameter, int32 return) is
+// probe_abi_hook_shapes.mettle.
+import "std/io";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+
+fn main() -> int32 {
+  println("direct status=[{rz_status_reason(404)}]");
+  var f: fn(int32) -> string = &rz_status_reason;
+  var s: string = f(404);          // <- the unsupported shape
+  println("indirect status=[{s}]");
+  return 0;
+}

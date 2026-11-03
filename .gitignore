@@ -1,0 +1,7 @@
+build/
+mettle-build/
+t/
+*.o
+*.obj
+*.out
+*.log

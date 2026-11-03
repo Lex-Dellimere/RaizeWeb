@@ -1,0 +1,31 @@
+// probe_auth_reexport — a consumer that imports ONLY framework/middleware/auth
+// still sees the moved token parser (Mettle imports are transitive), so the
+// auth_token.mettle split is invisible to callers.
+//
+//   -> scheme=[Bearer] token=[abc] code=0 (exit 0)
+import "std/io";
+import "std/mem";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/middleware/auth";
+
+fn main() -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 1; }
+  defer rz_arena_free(arena);
+  var req: RzRequest;
+  if (!rz_request_init(&req, arena)) { return 2; }
+  req.headers[0].name = "Authorization";
+  req.headers[0].value = "Bearer abc";
+  req.header_count = 1;
+  var tok: string = raize_str_empty();
+  var found: int32 = rz_auth_bearer_token(&req, &tok);
+  println("scheme=[{RZ_AUTH_SCHEME_BEARER}] token=[{tok}] found={found}");
+  // and the hook types still line up for an app that installs its own verifier
+  var a: RzAuth* = rz_auth_new();
+  if (a == 0) { return 3; }
+  defer rz_auth_free(a);
+  var rc: int32 = rz_auth_validate(a);
+  println("validate={rc} status401={rz_auth_status(401)}");
+  return 0;
+}

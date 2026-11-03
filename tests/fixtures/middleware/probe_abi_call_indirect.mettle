@@ -1,0 +1,28 @@
+// probe_abi_call_indirect — EXPECTED TO FAIL: indirect call, aggregate argument.
+//
+// Mettle v0.17.0 cannot compile an indirect call whose callee takes a struct by
+// value, so this file is a *negative* fixture: it must fail with
+//
+//   Code generation error: Direct object backend cannot compile function 'main'
+//   (call_indirect_unsupported)
+//
+// That is why no pluggable hook in framework/middleware takes a `string` by
+// value: the auth verifier would have been
+// `fn(RzContext*, token: string, principal: rawptr*) -> int32`, which compiles
+// only until someone builds it.
+//
+//   ./mettle-build/bin/mettle --build tests/fixtures/middleware/probe_abi_call_indirect.mettle -o /tmp/x
+//   -> exit 1, "call_indirect_unsupported"
+import "std/io";
+
+struct Fns { f: fn(string) -> int32; }
+
+fn len_of(s: string) -> int32 { return (int32)s.length; }
+
+fn main() -> int32 {
+  var fns: Fns;
+  fns.f = &len_of;
+  var n: int32 = fns.f("abcd");    // <- the unsupported shape
+  println("n={n}");
+  return 0;
+}
