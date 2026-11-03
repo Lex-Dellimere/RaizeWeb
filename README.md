@@ -20,6 +20,8 @@ framework/
 ├── middleware/  request pipeline, logging, limits, CORS, auth hook
 ├── template/    HTML/text renderer with escaping and sections
 ├── static/      file serving: mime types, ETag/304, traversal-safe
+├── ws/          WebSocket protocol: handshake, frames, UTF-8, connection state
+├── poll/        epoll event loop + cross-thread mailbox (Linux x86-64, syscall)
 ├── orm/         storage vtable, unit of work, migrations hook (no database)
 ├── config/      env + config, validated at startup, immutable after
 └── str/         the base layer: string views, owned copies, buffers, splitting
@@ -101,11 +103,23 @@ Does not promise, because Mettle cannot:
 - TLS. Run raize behind a reverse proxy and trust `X-Forwarded-*` only when a
   proxy is configured.
 - DNS. Bind by address.
-- HTTP/2, WebSockets via an event loop, chunked request bodies, or
-  `Expect: 100-continue` beyond the documented answer.
+- HTTP/2, chunked request bodies, or `Expect: 100-continue` beyond the
+  documented answer.
+- An event loop off Linux x86-64. `framework/poll` uses raw x86-64 syscall
+  numbers through the dev compiler's `syscall` builtin; the blocking HTTP
+  server works everywhere.
 - Catching a fault. A hardware fault is a process death in Mettle; the
   framework turns error *returns* into 500s, and a supervisor restarts the
   process.
+
+## Realtime (in progress)
+
+WebSockets, channels and LiveView, following Phoenix and its wire protocol:
+see `docs/design/realtime.md`. Done so far: the WebSocket protocol
+(`framework/ws`, interpreter-tested) and the epoll loop (`framework/poll`),
+proven together by `make ws-test` (18 checks over real sockets: echo,
+fragments, ping, close codes 1002/1007/1009, a cross-thread broadcast, 50
+concurrent clients).
 
 ## Status
 

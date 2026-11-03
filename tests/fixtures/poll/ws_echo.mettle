@@ -1,0 +1,245 @@
+// tests/fixtures/poll/ws_echo — a WebSocket echo server on one epoll thread.
+//
+// The first end-to-end use of framework/poll and framework/ws over real
+// sockets (tests/integration/ws.sh drives it with a Python client):
+//
+//   * the listening socket and every client are nonblocking, in one epoll set
+//   * the HTTP upgrade is parsed with the framework parser (rz_parse) and
+//     answered by rz_ws_write_101; other requests get 400/405/426 and close
+//   * text and binary messages are echoed; "broadcast:<x>" goes to everyone
+//   * a ticker thread posts to the loop's mailbox every 100 ms, and the loop
+//     sends "tick <n>" to every client: the cross-thread wake path
+//   * partial writes are finished on EPOLLOUT
+//
+// Run: ./build/ws_echo [port]
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "../../../framework/str/str";
+import "../../../framework/context/arena";
+import "../../../framework/context/request";
+import "../../../framework/server/parse";
+import "../../../framework/server/listener";
+import "../../../framework/ws/handshake";
+import "../../../framework/ws/frame";
+import "../../../framework/ws/conn";
+import "../../../framework/poll/sys";
+import "../../../framework/poll/poll";
+
+const SLOTS: int32 = 64;
+const LISTEN_TAG: int64 = 1000000;
+const MSG_TICK: int32 = 1;
+
+struct EchoSlot {
+  fd: int64;
+  used: bool;
+  http: RaizeBuf*;          // request head until the upgrade
+  ws: RzWsConn*;            // after the upgrade
+  out: RaizeBuf*;           // pre-upgrade output (101 or refusal)
+  closing: bool;            // close once output is flushed
+  want_out: bool;           // registered for EPOLLOUT
+}
+
+var g_poll: RzPoll* = 0;
+var g_slots: EchoSlot* = 0;
+var g_stop: int32 = 0;
+var g_arena: RzArena* = 0;
+
+fn slot_tag(i: int32) -> int64 { return (int64)i + 1; }
+
+fn slot_out(s: EchoSlot*) -> RaizeBuf* {
+  if (s->ws != 0) { return s->ws->out; }
+  return s->out;
+}
+
+fn slot_close(i: int32) {
+  var s: EchoSlot* = &g_slots[i];
+  if (!s->used) { return; }
+  rz_poll_del(g_poll, s->fd);
+  rz_sys_close(s->fd);
+  if (s->ws != 0) { rz_ws_conn_free(s->ws); }
+  raize_buf_free(s->http);
+  raize_buf_free(s->out);
+  memset((rawptr)s, 0, sizeof(EchoSlot));
+}
+
+// Writes as much pending output as the socket takes. Closes the slot when it
+// is finished and the output is empty.
+fn slot_flush(i: int32) {
+  var s: EchoSlot* = &g_slots[i];
+  var out: RaizeBuf* = slot_out(s);
+  while (out->len > 0) {
+    var n: int64 = rz_sys_send(s->fd, out->data, out->len);
+    if (n == RZ_EINTR) { continue; }
+    if (n == RZ_EAGAIN) { break; }
+    if (n <= 0) { slot_close(i); return; }
+    if (s->ws != 0) {
+      rz_ws_conn_wrote(s->ws, n);
+    } else {
+      memmove((rawptr)out->data, (rawptr)(out->data + n), out->len - n);
+      out->len = out->len - n;
+    }
+  }
+  var pending: bool = out->len > 0;
+  if (!pending && (s->closing || (s->ws != 0 && rz_ws_conn_done(s->ws)))) {
+    slot_close(i);
+    return;
+  }
+  if (pending != s->want_out) {
+    var ev: int32 = RZ_EPOLLIN | RZ_EPOLLRDHUP;
+    if (pending) { ev = ev | RZ_EPOLLOUT; }
+    rz_poll_mod(g_poll, s->fd, ev, slot_tag(i));
+    s->want_out = pending;
+  }
+}
+
+fn broadcast(text: string) {
+  var i: int32 = 0;
+  while (i < SLOTS) {
+    if (g_slots[i].used && g_slots[i].ws != 0) {
+      rz_ws_conn_send_text(g_slots[i].ws, text);
+    }
+    i = i + 1;
+  }
+}
+
+fn flush_all() {
+  var i: int32 = 0;
+  while (i < SLOTS) {
+    if (g_slots[i].used) { slot_flush(i); }
+    i = i + 1;
+  }
+}
+
+fn on_message(ctx: rawptr, op: int32, payload: string) -> int32 {
+  var s: EchoSlot* = (EchoSlot*)ctx;
+  if (op == RZ_WS_OP_TEXT && raize_str_starts(payload, "broadcast:")) {
+    broadcast(raize_str_from(payload, 10));
+    return 0;
+  }
+  return rz_ws_conn_send(s->ws, op, payload);
+}
+
+// Handles bytes before the upgrade. Returns false when the slot was closed.
+fn slot_http(i: int32, p: uint8*, n: int64) {
+  var s: EchoSlot* = &g_slots[i];
+  raize_buf_add_bytes(s->http, p, n);
+  rz_arena_reset(g_arena);
+  var req: RzRequest;
+  memset((rawptr)&req, 0, sizeof(RzRequest));
+  var rc: int32 = rz_parse(s->http->data, s->http->len, &req, g_arena);
+  if (rc == RZ_PARSE_NEED_MORE) { return; }
+  var status: int32 = 400;
+  if (rc == RZ_PARSE_COMPLETE) { status = rz_ws_check_upgrade(&req); }
+  if (status != RZ_WS_UPGRADE_OK) {
+    raize_buf_add(s->out, "HTTP/1.1 ");
+    raize_buf_add_int(s->out, (int64)status);
+    raize_buf_add(s->out, " Refused\r\nSec-WebSocket-Version: 13\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    s->closing = true;
+    slot_flush(i);
+    return;
+  }
+  var key: string = rz_req_header(&req, "sec-websocket-key");
+  s->ws = rz_ws_conn_new(65536, &on_message, (rawptr)s);
+  rz_ws_write_101(key, "", s->ws->out);
+  var rest: int64 = s->http->len - req.head_len;
+  if (rest > 0) { rz_ws_conn_feed(s->ws, s->http->data + req.head_len, rest); }
+  s->http->len = 0;
+}
+
+fn slot_read(i: int32) {
+  var buf: uint8[16384];
+  while (g_slots[i].used) {
+    var n: int64 = rz_sys_recv(g_slots[i].fd, &buf[0], 16384);
+    if (n == RZ_EINTR) { continue; }
+    if (n == RZ_EAGAIN) { break; }
+    if (n <= 0) { slot_close(i); return; }
+    if (g_slots[i].ws == 0) {
+      slot_http(i, &buf[0], n);
+    } else {
+      rz_ws_conn_feed(g_slots[i].ws, &buf[0], n);
+    }
+  }
+}
+
+fn do_accept(listen_fd: int64) {
+  while (true) {
+    var fd: int64 = rz_sys_accept_nb(listen_fd);
+    if (fd < 0) { return; }
+    var i: int32 = 0;
+    while (i < SLOTS && g_slots[i].used) { i = i + 1; }
+    if (i == SLOTS) { rz_sys_close(fd); continue; }
+    var s: EchoSlot* = &g_slots[i];
+    s->fd = fd;
+    s->used = true;
+    s->http = raize_buf_new();
+    s->out = raize_buf_new();
+    rz_poll_add(g_poll, fd, RZ_EPOLLIN | RZ_EPOLLRDHUP, slot_tag(i));
+  }
+}
+
+fn ticker(arg: cstring) -> uint32 {
+  var n: int64 = 0;
+  while (atomic_compare_exchange_i32(&g_stop, 0, 0) == 0) {
+    thread_sleep_ms(100);
+    n = n + 1;
+    var m: RzPollMsg;
+    m.kind = MSG_TICK;
+    m.a = n;
+    m.b = 0;
+    m.ptr = 0;
+    rz_poll_post(g_poll, m);
+  }
+  return 0;
+}
+
+fn main(argc: int32, argv: cstring*) -> int32 {
+  var port: int32 = 8095;
+  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+  var err: int32 = 0;
+  var lfd: int64 = rz_listen(port, 64, &err);
+  if (lfd < 0) { print("listen failed: {err}\n"); return 1; }
+  rz_sys_set_nonblock(lfd);
+  g_poll = rz_poll_new(256);
+  g_arena = rz_arena_new();
+  g_slots = (EchoSlot*)calloc((int64)SLOTS, sizeof(EchoSlot));
+  if (g_poll == 0 || g_arena == 0 || g_slots == 0) { print("init failed\n"); return 1; }
+  rz_poll_add(g_poll, lfd, RZ_EPOLLIN, LISTEN_TAG);
+  var th: int64 = CreateThread(0, 0, &ticker, 0, 0, 0);
+  print("ws_echo listening on {port}\n");
+
+  while (true) {
+    var n: int32 = rz_poll_wait(g_poll, 1000);
+    var k: int32 = 0;
+    while (k < n) {
+      var e: RzPollEvent = rz_poll_event(g_poll, k);
+      if (e.tag == LISTEN_TAG) {
+        do_accept(lfd);
+      } else if (e.tag == RZ_POLL_WAKE) {
+        var m: RzPollMsg;
+        while (rz_poll_take(g_poll, &m)) {
+          if (m.kind == MSG_TICK) {
+            var tb: uint8[32];
+            var t: RaizeBuf* = raize_buf_new();
+            raize_buf_add(t, "tick ");
+            raize_buf_add(t, raize_int_buf(m.a, &tb[0], 32));
+            broadcast(raize_buf_str(t));
+            raize_buf_free(t);
+          }
+        }
+      } else if (e.tag >= 1 && e.tag <= (int64)SLOTS) {
+        var i: int32 = (int32)(e.tag - 1);
+        if (g_slots[i].used) {
+          if ((e.events & (RZ_EPOLLIN | RZ_EPOLLRDHUP | RZ_EPOLLHUP | RZ_EPOLLERR)) != 0) { slot_read(i); }
+        }
+      }
+      k = k + 1;
+    }
+    flush_all();
+  }
+  atomic_exchange_i32(&g_stop, 1);
+  thread_join_infinite(th);
+  thread_close(th);
+  return 0;
+}
