@@ -1,0 +1,17 @@
+// Prints the handshake accept key for the RFC 6455 example, compiled (not
+// interpreted), so codegen and the interpreter can be compared.
+import "std/io";
+import "../../../framework/str/str";
+import "../../../framework/ws/sha1";
+import "../../../framework/ws/handshake";
+
+fn main() -> int32 {
+  var out: uint8[32];
+  var a: string = rz_ws_accept_key("dGhlIHNhbXBsZSBub25jZQ==", &out[0], 32);
+  print("accept [{a}]\n");
+  var g: string = RZ_WS_GUID;
+  print("guid len {g.length}\n");
+  if (raize_str_eq(a, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")) { print("PASS\n"); return 0; }
+  print("FAIL\n");
+  return 1;
+}

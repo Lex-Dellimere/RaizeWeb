@@ -70,7 +70,7 @@ Each milestone is committed separately with its tests.
 - Handshake: validate `Upgrade`, `Connection`, `Sec-WebSocket-Version: 13`
   and `Sec-WebSocket-Key`, and compute `Sec-WebSocket-Accept`. Tested against
   the RFC 6455 §1.3 example (`dGhlIHNhbXBsZSBub25jZQ==` gives
-  `s3pPLMBiTxaQ9kYGJRbK+oo4OzM=`).
+  `s3pPLMBiTxaQ9kYGzzhZRbK+xOo=`).
 - Frame decoder and encoder: FIN, opcodes (text, binary, ping, pong, close,
   continuation), masking, and 7-, 16- and 64-bit lengths.
 - Every bound is a named `RZ_WS_MAX_*` constant, and going over one is a close
