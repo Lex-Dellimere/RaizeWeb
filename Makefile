@@ -4,10 +4,10 @@ M       ?= ./mettle-build/bin/mettle
 BUILD   ?= build
 PORT    ?= 8080
 
-APPS    := hello site
+APPS    := tasks
 MODULES := $(wildcard framework/*/*.mettle) $(wildcard tests/unit/*.mettle)
 
-.PHONY: all clean test lint integration $(APPS) run-% smoke site-test
+.PHONY: all clean test lint integration $(APPS) run-% smoke tasks-test
 
 all: $(APPS)
 
@@ -32,23 +32,20 @@ test: lint
 	  fi; \
 	done; exit $$fail
 
-smoke: $(BUILD)/hello
-	./tests/integration/smoke.sh $(BUILD)/hello $(PORT)
+smoke: $(BUILD)/tasks
+	./tests/integration/tasks.sh $(BUILD)/tasks $(PORT)
 
-site-test: $(BUILD)/site
-	./tests/integration/site.sh $(BUILD)/site 8081
-	./tests/integration/leak.sh $(BUILD)/hello 8080 2000
-	./tests/integration/leak.sh $(BUILD)/site 8081 2000
-	./tests/integration/config.sh $(BUILD)/hello 8082
+tasks-test: $(BUILD)/tasks
+	./tests/integration/tasks.sh $(BUILD)/tasks 8081
+	./tests/integration/leak.sh $(BUILD)/tasks 8081 2000
+	./tests/integration/config.sh $(BUILD)/tasks 8082
 
-# Everything, in order: layout, unit, then the two HTTP suites.
-integration: test $(BUILD)/hello $(BUILD)/site
-	./tests/integration/smoke.sh $(BUILD)/hello 8080
-	./tests/integration/http_edges.sh $(BUILD)/hello 8080
-	./tests/integration/site.sh $(BUILD)/site 8081
-	./tests/integration/leak.sh $(BUILD)/hello 8080 2000
-	./tests/integration/leak.sh $(BUILD)/site 8081 2000
-	./tests/integration/config.sh $(BUILD)/hello 8082
+# Everything, in order: layout, unit, then the HTTP suites.
+integration: test $(BUILD)/tasks
+	./tests/integration/tasks.sh $(BUILD)/tasks 8080
+	./tests/integration/http_edges.sh $(BUILD)/tasks 8080
+	./tests/integration/leak.sh $(BUILD)/tasks 8080 2000
+	./tests/integration/config.sh $(BUILD)/tasks 8082
 
 run-%: $(BUILD)/%
 	./$(BUILD)/$*

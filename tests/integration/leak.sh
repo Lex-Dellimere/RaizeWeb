@@ -47,7 +47,7 @@ RSS0=$(rss_kb "$PID")
 VSZ0=$(vsz_kb "$PID")
 
 for _ in $(seq 1 "$N"); do printf 'url = "%s/"\n' "$BASE"; done >"$URLS"
-curl -s -o /dev/null -K "$URLS"
+curl -s -K "$URLS" > /dev/null
 
 RSS1=$(rss_kb "$PID")
 VSZ1=$(vsz_kb "$PID")

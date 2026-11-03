@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>{{title}}</h1>
+      <p class="tagline">{{tagline}}</p>
+      <p class="count">Store: <strong id="count">{{count}}</strong> / 64 tasks</p>
+    </header>
+
+    <form id="new-task">
+      <input id="title" name="title" maxlength="120" placeholder="What needs doing?" autocomplete="off">
+      <button type="submit">Add task</button>
+    </form>
+
+    <p id="status" class="status" role="status"></p>
+    <ul id="tasks" class="tasks"></ul>
+
+    <footer>
+      <a href="/healthz">/healthz</a>
+      <a href="/api/tasks">/api/tasks</a>
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

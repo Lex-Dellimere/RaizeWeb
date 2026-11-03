@@ -1,0 +1,131 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5f2;
+  --fg: #1d1d1b;
+  --muted: #6b6a66;
+  --card: #ffffff;
+  --line: #dedcd6;
+  --accent: #2f6f4e;
+  --danger: #a33a2b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171816;
+    --fg: #efeee9;
+    --muted: #a2a09a;
+    --card: #20211e;
+    --line: #353630;
+    --accent: #6fbf90;
+    --danger: #e07a6a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  width: min(680px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3rem);
+  letter-spacing: -0.04em;
+}
+
+.tagline { color: var(--muted); margin: 0.25rem 0 0; }
+.count { color: var(--muted); font-size: 0.9rem; }
+
+form {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.5rem 0 1rem;
+}
+
+input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+button:disabled { opacity: 0.5; cursor: progress; }
+
+.status { min-height: 1.5rem; color: var(--muted); font-size: 0.9rem; }
+.status.error { color: var(--danger); }
+
+.tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.task.done .title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.task .title { flex: 1; overflow-wrap: anywhere; }
+.task .id { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+.task button {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+
+.task button.danger { color: var(--danger); }
+
+footer {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  font-size: 0.85rem;
+}
+
+footer a { color: var(--accent); }

@@ -23,7 +23,7 @@ framework/
 ├── orm/         storage vtable, unit of work, migrations hook (no database)
 ├── config/      env + config, validated at startup, immutable after
 └── str/         the base layer: string views, owned copies, buffers, splitting
-examples/        runnable apps
+examples/tasks/  a complete example: template, JSON API, static files
 tests/           lint.sh, integration/*.sh, unit/*.mettle, fixtures/
 docs/            architecture review and design notes
 notes/           the Mettle language study this was built on
@@ -43,16 +43,42 @@ Mettle tree takes about 45 seconds).
 make                 # build every example
 make lint            # layout rules: <=400 product lines/file, name prefixes
 make test            # lint + run @test functions in the interpreter (no codegen)
-make smoke           # start examples/hello, prove it over a real socket
-make run-hello       # build and run on :8080
+make smoke           # start examples/tasks and prove it over a real socket
+make run-tasks       # build and run on :8080
 ```
 
 Or by hand:
 
 ```bash
-./mettle-build/bin/mettle --build examples/hello/app.mettle -o build/hello
-./build/hello
+./mettle-build/bin/mettle --build examples/tasks/app.mettle -o build/tasks
+./build/tasks
 curl -i http://127.0.0.1:8080/
+```
+
+## Example: examples/tasks
+
+A small task list that exercises the whole framework in one process:
+
+| Route | What it shows |
+|---|---|
+| `GET /` | a template compiled once at startup |
+| `GET /healthz` | JSON response + store counters |
+| `GET/POST /api/tasks` | JSON in, JSON out, bounded in-memory store |
+| `GET /api/tasks/:id` | path params |
+| `POST /api/tasks/:id/toggle` | a mutating route |
+| `DELETE /api/tasks/:id` | 204, owned-string cleanup |
+| `GET /static/*` | static files with ETag/304 |
+| `OPTIONS /api/tasks` | CORS preflight from the middleware chain |
+
+The pipeline is `recover -> logging -> cors -> router`. Mutations take a spin
+lock because the server runs `RAIZE_WORKERS` threads; titles are copied out of
+the request arena before they are stored. Configuration comes from `RAIZE_*`
+environment variables, and `--port` wins over the environment.
+
+```bash
+make smoke            # build + 29 checks over real sockets
+make run-tasks        # http://127.0.0.1:8080/
+RAIZE_PORT=8099 make run-tasks
 ```
 
 ## What the framework promises, and what it does not

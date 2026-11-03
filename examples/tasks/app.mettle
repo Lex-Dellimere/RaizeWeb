@@ -1,0 +1,505 @@
+// examples/tasks — a small, complete raize application.
+//
+// It demonstrates every seam the framework ships:
+//
+//   GET    /                    HTML from a startup-compiled template
+//   GET    /healthz             JSON health + store counters
+//   GET    /api/tasks           JSON list
+//   POST   /api/tasks           JSON create        {"title":"..."}
+//   GET    /api/tasks/:id       JSON one task
+//   POST   /api/tasks/:id/toggle  JSON flip `done`
+//   DELETE /api/tasks/:id       204
+//   GET    /static/*path        static assets (mime, ETag, 304)
+//
+// Pipeline: recover -> logging -> cors -> router.
+//
+// The store is in-process and bounded (64 tasks). Mutations take a spin lock
+// because the server serves requests on worker threads. Task titles are copied
+// out of the request arena: everything in RzRequest dies at the end of the
+// request, while a stored title must not.
+//
+// Build from the repository root (imports and asset paths are cwd-relative):
+//   ./mettle-build/bin/mettle --build examples/tasks/app.mettle -o build/tasks
+// Run:
+//   ./build/tasks
+//   ./build/tasks --port 8099
+//   RAIZE_PORT=8099 ./build/tasks
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "framework/str/str";
+import "framework/context/context";
+import "framework/router/router";
+import "framework/server/server";
+import "framework/middleware/chain";
+import "framework/middleware/logging";
+import "framework/middleware/recover";
+import "framework/middleware/cors";
+import "framework/template/template";
+import "framework/template/vars";
+import "framework/static/static";
+import "framework/config/config";
+
+const TASK_TEMPLATE: string = "examples/tasks/templates/index.html";
+const TASK_TEMPLATE_FROM_BUILD: string = "../examples/tasks/templates/index.html";
+const TASK_PUBLIC: string = "examples/tasks/public";
+const TASK_PUBLIC_FROM_BUILD: string = "../examples/tasks/public";
+const TASK_STATIC_PREFIX: string = "/static";
+const TASK_MAX: int32 = 64;
+const TASK_TITLE_MAX: int64 = 120;
+
+struct RzTask {
+  id: int32;
+  title: string;        // owned (raize_str_dup); freed on delete/exit
+  done: bool;
+}
+
+struct RzTaskStore {
+  items: RzTask[64];    // literal matches TASK_MAX
+  count: int32;
+  next_id: int32;
+  lock: int32;          // spin_lock / spin_unlock
+}
+
+// Published before any worker exists, read-only afterwards. The store's
+// contents are mutable through the pointer; the pointer itself is not.
+var g_router: RzRouter* = 0;
+var g_template: RzTemplate* = 0;
+var g_static: RzStatic* = 0;
+var g_chain: RzChain* = 0;
+var g_store: RzTaskStore* = 0;
+var g_max_body: int64 = 0;
+
+// ---------------------------------------------------------------------------
+// Store helpers (caller holds the lock)
+// ---------------------------------------------------------------------------
+
+fn task_index(store: RzTaskStore*, id: int32) -> int32 {
+  if (store == 0 || id <= 0) { return -1; }
+  var i: int32 = 0;
+  while (i < store->count) {
+    if (store->items[i].id == id) { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+// Like raize_str_dup, but reports allocation failure with a null view instead
+// of the empty literal: raize_str_free must never see a literal pointer.
+fn task_dup(s: string) -> string {
+  var n: int64 = (int64)s.length;
+  var p: uint8* = (uint8*)malloc(n + 1);
+  var out: string;
+  if (p == 0) {
+    out.chars = 0;
+    out.length = 0;
+    return out;
+  }
+  var i: int64 = 0;
+  while (i < n) {
+    p[i] = s.chars[i];
+    i = i + 1;
+  }
+  p[n] = 0;
+  return raize_str_view(p, n);
+}
+
+fn task_json_into(buf: RaizeBuf*, t: RzTask*, comma: bool) {
+  if (comma) { raize_buf_add(buf, ","); }
+  raize_buf_add(buf, "{{\"id\":");
+  raize_buf_add_int(buf, (int64)t->id);
+  raize_buf_add(buf, ",\"title\":\"");
+  rz_json_escape_into(buf, t->title);
+  raize_buf_add(buf, "\",\"done\":");
+  if (t->done) {
+    raize_buf_add(buf, "true");
+  } else {
+    raize_buf_add(buf, "false");
+  }
+  raize_buf_add(buf, "}");
+}
+
+fn respond_json(ctx: RzContext*, status: int32) -> int32 {
+  var rc: int32 = rz_resp_set_content_type(ctx->resp, RZ_CT_JSON);
+  if (rc != 0) { return 500; }
+  ctx->resp->status = status;
+  ctx->status = status;
+  return status;
+}
+
+// The router treats any handler return outside 100..599 as a server error, so
+// a handler that uses rz_ctx_* must still return the status it just built.
+fn json_status(ctx: RzContext*, status: int32, body: string) -> int32 {
+  rz_ctx_json(ctx, status, body);
+  return status;
+}
+
+fn empty_status(ctx: RzContext*, status: int32) -> int32 {
+  rz_ctx_empty(ctx, status);
+  return status;
+}
+
+fn task_id_from_path(ctx: RzContext*) -> int32 {
+  var raw: string = rz_req_param(ctx->req, "id");
+  var v: int64 = raize_str_to_int(raw);
+  if (v <= 0 || v > 2147483647) { return -1; }
+  return (int32)v;
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+fn h_index(ctx: RzContext*) -> int32 {
+  var count: int32 = 0;
+  spin_lock(&g_store->lock);
+  count = g_store->count;
+  spin_unlock(&g_store->lock);
+
+  var vars: RzVarMap;
+  rz_vars_init(&vars);
+  rz_vars_set(&vars, "title", "raize tasks");
+  rz_vars_set(&vars, "tagline", "a bounded in-memory task list on a blocking TCP server");
+  var nbuf: uint8[32];
+  rz_vars_set(&vars, "count", raize_int_buf((int64)count, &nbuf[0], 32));
+
+  var st: int32 = rz_template_render_into(g_template, &vars, ctx->resp->body);
+  if (st != RZ_TPL_OK) {
+    raize_buf_add(ctx->resp->body, "template render failed\n");
+    ctx->resp->status = 500;
+    ctx->status = 500;
+    return 500;
+  }
+  var rc: int32 = rz_resp_set_content_type(ctx->resp, RZ_CT_HTML);
+  if (rc != 0) { return 500; }
+  ctx->resp->status = 200;
+  ctx->status = 200;
+  return 200;
+}
+
+fn h_health(ctx: RzContext*) -> int32 {
+  var count: int32 = 0;
+  spin_lock(&g_store->lock);
+  count = g_store->count;
+  spin_unlock(&g_store->lock);
+
+  var b: RaizeBuf* = ctx->resp->body;
+  raize_buf_add(b, "{{\"status\":\"ok\",\"tasks\":");
+  raize_buf_add_int(b, (int64)count);
+  raize_buf_add(b, ",\"capacity\":64}");
+  return respond_json(ctx, 200);
+}
+
+fn h_list(ctx: RzContext*) -> int32 {
+  var b: RaizeBuf* = ctx->resp->body;
+  spin_lock(&g_store->lock);
+  raize_buf_add(b, "[");
+  var i: int32 = 0;
+  while (i < g_store->count) {
+    task_json_into(b, &g_store->items[i], i > 0);
+    i = i + 1;
+  }
+  raize_buf_add(b, "]");
+  spin_unlock(&g_store->lock);
+  return respond_json(ctx, 200);
+}
+
+fn h_create(ctx: RzContext*) -> int32 {
+  var title: string = raize_str_empty();
+  if (!rz_json_get_str(ctx->req->body, "title", &title, ctx->arena)) {
+    return json_status(ctx, 400, "{{\"error\":\"missing title\"}");
+  }
+  title = raize_str_trim(title);
+  var n: int64 = (int64)title.length;
+  if (n <= 0) {
+    return json_status(ctx, 400, "{{\"error\":\"title is empty\"}");
+  }
+  if (n > TASK_TITLE_MAX) {
+    return json_status(ctx, 400, "{{\"error\":\"title too long\"}");
+  }
+
+  // The request arena is reset after this handler returns, so the stored
+  // title must be an owning copy.
+  var owned: string = task_dup(title);
+  if (owned.chars == 0) {
+    rz_ctx_text(ctx, 500, "out of memory\n");
+    return 500;
+  }
+
+  var b: RaizeBuf* = ctx->resp->body;
+  spin_lock(&g_store->lock);
+  if (g_store->count >= TASK_MAX) {
+    spin_unlock(&g_store->lock);
+    raize_str_free(owned);
+    return json_status(ctx, 409, "{{\"error\":\"store is full\"}");
+  }
+  var at: int32 = g_store->count;
+  g_store->items[at].id = g_store->next_id;
+  g_store->items[at].title = owned;
+  g_store->items[at].done = false;
+  g_store->next_id = g_store->next_id + 1;
+  g_store->count = at + 1;
+  task_json_into(b, &g_store->items[at], false);
+  spin_unlock(&g_store->lock);
+  return respond_json(ctx, 201);
+}
+
+fn h_get(ctx: RzContext*) -> int32 {
+  var id: int32 = task_id_from_path(ctx);
+  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+
+  var found: bool = false;
+  var b: RaizeBuf* = ctx->resp->body;
+  spin_lock(&g_store->lock);
+  var idx: int32 = task_index(g_store, id);
+  if (idx >= 0) {
+    task_json_into(b, &g_store->items[idx], false);
+    found = true;
+  }
+  spin_unlock(&g_store->lock);
+  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return respond_json(ctx, 200);
+}
+
+fn h_toggle(ctx: RzContext*) -> int32 {
+  var id: int32 = task_id_from_path(ctx);
+  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+
+  var found: bool = false;
+  var b: RaizeBuf* = ctx->resp->body;
+  spin_lock(&g_store->lock);
+  var idx: int32 = task_index(g_store, id);
+  if (idx >= 0) {
+    g_store->items[idx].done = !g_store->items[idx].done;
+    task_json_into(b, &g_store->items[idx], false);
+    found = true;
+  }
+  spin_unlock(&g_store->lock);
+  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return respond_json(ctx, 200);
+}
+
+fn h_delete(ctx: RzContext*) -> int32 {
+  var id: int32 = task_id_from_path(ctx);
+  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+
+  var found: bool = false;
+  var title: string = raize_str_empty();
+  spin_lock(&g_store->lock);
+  var idx: int32 = task_index(g_store, id);
+  if (idx >= 0) {
+    title = g_store->items[idx].title;
+    var k: int32 = idx;
+    while (k + 1 < g_store->count) {
+      g_store->items[k].id = g_store->items[k + 1].id;
+      g_store->items[k].title = g_store->items[k + 1].title;
+      g_store->items[k].done = g_store->items[k + 1].done;
+      k = k + 1;
+    }
+    g_store->count = g_store->count - 1;
+    found = true;
+  }
+  spin_unlock(&g_store->lock);
+  // Free outside the lock: free() is not part of the critical section.
+  if (found) { raize_str_free(title); }
+  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return empty_status(ctx, 204);
+}
+
+fn h_static(ctx: RzContext*) -> int32 {
+  return rz_static_handle(g_static, ctx);
+}
+
+// Chain terminal: enforce the deployment body cap, then dispatch.
+fn handle_route(ctx: RzContext*) -> int32 {
+  if (g_max_body > 0 && ctx->req != 0) {
+    if (ctx->req->body_len > g_max_body) {
+      rz_ctx_text(ctx, 413, "payload too large\n");
+      return 413;
+    }
+  }
+  return rz_router_handle(g_router, ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Startup helpers
+// ---------------------------------------------------------------------------
+
+// Mettle has no argv surface on Linux; read the command line from /proc.
+fn read_port(dflt: int32) -> int32 {
+  var fp: cstring = fopen("/proc/self/cmdline", "rb");
+  if (fp == 0) { return dflt; }
+  var buf: uint8[2048];
+  var n: int64 = fread((cstring)&buf[0], 1, 2048, fp);
+  var frc: int32 = fclose(fp);
+  if (frc != 0 || n <= 0) { return dflt; }
+  var port: int32 = dflt;
+  var i: int64 = 0;
+  var start: int64 = 0;
+  var want: bool = false;
+  while (i < n) {
+    if (buf[i] == 0) {
+      var a: string = raize_str_view(&buf[start], i - start);
+      if (want) {
+        var v: int64 = raize_str_to_int(a);
+        if (v > 0 && v < 65536) { port = (int32)v; }
+        want = false;
+      } else if (raize_str_eq(a, "--port")) {
+        want = true;
+      }
+      start = i + 1;
+    }
+    i = i + 1;
+  }
+  return port;
+}
+
+fn store_new() -> RzTaskStore* {
+  var s: RzTaskStore* = (RzTaskStore*)calloc(1, sizeof(RzTaskStore));
+  if (s == 0) { return 0; }
+  s->count = 0;
+  s->next_id = 1;
+  s->lock = 0;
+  return s;
+}
+
+fn store_free(s: RzTaskStore*) {
+  if (s == 0) { return; }
+  var i: int32 = 0;
+  while (i < s->count) {
+    raize_str_free(s->items[i].title);
+    i = i + 1;
+  }
+  free((rawptr)s);
+}
+
+// ---------------------------------------------------------------------------
+
+fn main() -> int32 {
+  // Config: defaults -> RAIZE_* env -> validate, --port wins, then freeze.
+  var cfg: RzConfig = rz_config_default();
+  var errs: RzConfigErrors;
+  rz_config_errors_reset(&errs);
+  var lrc: int32 = rz_config_load_defaults_env(&cfg, &errs);
+  if (lrc != 0) {
+    println("tasks: invalid configuration");
+    var ei: int32 = 0;
+    var en: int32 = rz_config_error_count(&errs);
+    while (ei < en) {
+      println("tasks: {rz_config_error_field(&errs, ei)}: {rz_config_error_text(&errs, ei)}");
+      ei = ei + 1;
+    }
+    return 1;
+  }
+  var argv_port: int32 = read_port(0);
+  if (argv_port > 0) { cfg.port = argv_port; }
+  var frozen: int32 = rz_config_freeze(&cfg);
+  if (frozen != 0) { println("tasks: config freeze failed {frozen}"); return 1; }
+  g_max_body = rz_config_max_body(&cfg);
+  var port: int32 = cfg.port;
+
+  g_store = store_new();
+  if (g_store == 0) { println("tasks: store allocation failed"); return 2; }
+
+  // Template compiled once, before the listener exists.
+  g_template = rz_template_new();
+  if (g_template == 0) { println("tasks: template_new failed"); return 3; }
+  var decls: RzVarMap;
+  rz_vars_init(&decls);
+  rz_vars_set(&decls, "title", "-");
+  rz_vars_set(&decls, "tagline", "-");
+  rz_vars_set(&decls, "count", "0");
+  // Asset paths are cwd-relative. Accept the canonical "run from the repo
+  // root" layout, and the common "cd build && ./tasks" layout as a fallback.
+  var template_path: string = TASK_TEMPLATE;
+  var trc: int32 = rz_template_load(g_template, template_path, &decls);
+  if (trc != RZ_TPL_OK) {
+    template_path = TASK_TEMPLATE_FROM_BUILD;
+    trc = rz_template_load(g_template, template_path, &decls);
+  }
+  if (trc != RZ_TPL_OK) {
+    println("tasks: template {TASK_TEMPLATE} refused: {rz_template_strerror(trc)}");
+    return 4;
+  }
+
+  var static_root: string = TASK_PUBLIC;
+  g_static = rz_static_new(static_root, TASK_STATIC_PREFIX, 60);
+  if (g_static == 0) {
+    static_root = TASK_PUBLIC_FROM_BUILD;
+    g_static = rz_static_new(static_root, TASK_STATIC_PREFIX, 60);
+  }
+  if (g_static == 0) {
+    println("tasks: static root {TASK_PUBLIC} is not readable (run from the repo root or build/)");
+    return 5;
+  }
+
+  // Middleware config objects. Order on the chain:
+  // recover -> logging -> cors -> router.
+  var rec: RzRecover* = rz_recover_new();
+  if (rec == 0) { return 6; }
+  var lg: RzLog* = rz_log_new();
+  if (lg == 0) { return 7; }
+  var co: RzCors* = rz_cors_new();
+  if (co == 0) { return 8; }
+  var cur: int32 = rz_cors_set_origin(co, "*");
+  var mur: int32 = rz_recover_use(rec);
+  var lur: int32 = rz_log_use(lg);
+  var cor: int32 = rz_cors_use(co);
+  if (cur != 0 || mur != 0 || lur != 0 || cor != 0) {
+    println("tasks: middleware setup failed {cur} {mur} {lur} {cor}");
+    return 9;
+  }
+
+  g_router = rz_router_new();
+  if (g_router == 0) { println("tasks: router_new failed"); return 10; }
+  var a0: int32 = rz_router_add(g_router, "GET", "/", &h_index);
+  var a1: int32 = rz_router_add(g_router, "GET", "/healthz", &h_health);
+  var a2: int32 = rz_router_add(g_router, "GET", "/api/tasks", &h_list);
+  var a3: int32 = rz_router_add(g_router, "POST", "/api/tasks", &h_create);
+  var a4: int32 = rz_router_add(g_router, "GET", "/api/tasks/:id", &h_get);
+  var a5: int32 = rz_router_add(g_router, "POST", "/api/tasks/:id/toggle", &h_toggle);
+  var a6: int32 = rz_router_add(g_router, "DELETE", "/api/tasks/:id", &h_delete);
+  var a7: int32 = rz_router_add(g_router, "GET", "/static/*path", &h_static);
+  if (a0 != RZ_E_OK || a1 != RZ_E_OK || a2 != RZ_E_OK || a3 != RZ_E_OK ||
+      a4 != RZ_E_OK || a5 != RZ_E_OK || a6 != RZ_E_OK || a7 != RZ_E_OK) {
+    println("tasks: route registration failed {a0} {a1} {a2} {a3} {a4} {a5} {a6} {a7}");
+    return 11;
+  }
+
+  g_chain = rz_chain_new();
+  if (g_chain == 0) { println("tasks: chain_new failed"); return 12; }
+  var s0: int32 = rz_chain_add(g_chain, "recover", &rz_mw_recover);
+  var s1: int32 = rz_chain_add(g_chain, "logging", &rz_mw_logging);
+  var s2: int32 = rz_chain_add(g_chain, "cors", &rz_mw_cors);
+  var s3: int32 = rz_chain_set_terminal(g_chain, &handle_route);
+  if (s0 != 0 || s1 != 0 || s2 != 0 || s3 != 0) {
+    println("tasks: chain build failed {s0} {s1} {s2} {s3}");
+    return 13;
+  }
+  var handler: fn(RzContext*) -> int32 = rz_chain_handler(g_chain);
+  if (handler == (fn(RzContext*) -> int32)0) {
+    println("tasks: chain mount failed");
+    return 14;
+  }
+
+  var opts: RzServerOpts;
+  var orc: int32 = rz_config_to_opts(&cfg, &opts);
+  if (orc != RZ_CFG_OK) { println("tasks: config_to_opts failed {orc}"); return 15; }
+
+  var srv: RzServer* = rz_server_new(opts);
+  if (srv == 0) { println("tasks: server_new failed"); return 16; }
+  var sh: int32 = rz_server_set_handler(srv, handler);
+  if (sh != 0) { println("tasks: set_handler failed {sh}"); return 17; }
+
+  println("tasks: listening on 127.0.0.1:{port}");
+  var rc: int32 = rz_server_run(srv);
+
+  rz_server_free(srv);
+  rz_chain_free(g_chain);
+  rz_router_free(g_router);
+  rz_static_free(g_static);
+  rz_template_free(g_template);
+  store_free(g_store);
+  return rc;
+}
