@@ -1,0 +1,104 @@
+// tests/fixtures/hub/app — WebSockets mounted on the real raize server.
+//
+// The same behaviour as tests/fixtures/poll/ws_echo (so the same Python
+// client checks it), but through the framework: the blocking HTTP workers
+// route GET /socket to rz_hub_upgrade, which hands the socket to the hub
+// thread. Plain HTTP keeps working on the same port (GET / -> "ok").
+//
+//   echo text/binary; "broadcast:<x>" -> every socket; a ticker thread calls
+//   rz_hub_post_broadcast("tick <n>") every 100 ms (the any-thread API)
+//
+// Run: ./build/hub_app [port]
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "../../../framework/str/str";
+import "../../../framework/context/context";
+import "../../../framework/router/router";
+import "../../../framework/server/server";
+import "../../../framework/ws/frame";
+import "../../../framework/hub/hub";
+
+var g_hub: RzHub* = 0;
+var g_router: RzRouter* = 0;
+var g_echo: RzHubHandler* = 0;
+var g_stop: int32 = 0;
+
+fn echo_open(hub: RzHub*, sock: int64, arg: rawptr) -> rawptr {
+  return 0;
+}
+
+fn echo_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payload: string) -> int32 {
+  if (op == RZ_WS_OP_TEXT && raize_str_starts(payload, "broadcast:")) {
+    rz_hub_broadcast(hub, raize_str_from(payload, 10));
+    return 0;
+  }
+  return rz_hub_send_op(hub, sock, op, payload);
+}
+
+fn echo_close(hub: RzHub*, sock: int64, state: rawptr) {
+}
+
+fn h_index(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "ok\n");
+}
+
+fn h_socket(ctx: RzContext*) -> int32 {
+  return rz_hub_upgrade(ctx, g_hub, g_echo);
+}
+
+fn handle(ctx: RzContext*) -> int32 {
+  return rz_router_handle(g_router, ctx);
+}
+
+fn ticker(arg: cstring) -> uint32 {
+  var n: int64 = 0;
+  while (atomic_compare_exchange_i32(&g_stop, 0, 0) == 0) {
+    thread_sleep_ms(100);
+    n = n + 1;
+    var tb: uint8[32];
+    var t: RaizeBuf* = raize_buf_new();
+    raize_buf_add(t, "tick ");
+    raize_buf_add(t, raize_int_buf(n, &tb[0], 32));
+    rz_hub_post_broadcast(g_hub, raize_buf_str(t));
+    raize_buf_free(t);
+  }
+  return 0;
+}
+
+fn main(argc: int32, argv: cstring*) -> int32 {
+  var port: int32 = 8097;
+  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+
+  var hopts: RzHubOpts = rz_hub_opts_default();
+  hopts.max_message = 65536;
+  g_hub = rz_hub_new(hopts);
+  if (g_hub == 0 || rz_hub_start(g_hub) != 0) { println("hub_app: hub failed"); return 1; }
+  g_echo = (RzHubHandler*)calloc(1, sizeof(RzHubHandler));
+  g_echo->on_open = &echo_open;
+  g_echo->on_message = &echo_message;
+  g_echo->on_close = &echo_close;
+
+  g_router = rz_router_new();
+  var a0: int32 = rz_router_add(g_router, "GET", "/", &h_index);
+  var a1: int32 = rz_router_add(g_router, "GET", "/socket", &h_socket);
+  if (g_router == 0 || a0 != RZ_E_OK || a1 != RZ_E_OK) { println("hub_app: routes failed"); return 2; }
+
+  var opts: RzServerOpts = rz_server_opts_default();
+  opts.port = port;
+  opts.workers = 4;
+  var srv: RzServer* = rz_server_new(opts);
+  if (srv == 0 || rz_server_set_handler(srv, &handle) != 0) { println("hub_app: server failed"); return 3; }
+
+  var th: int64 = CreateThread(0, 0, &ticker, 0, 0, 0);
+  println("hub_app: listening on {port}");
+  var rc: int32 = rz_server_run(srv);
+  atomic_exchange_i32(&g_stop, 1);
+  thread_join_infinite(th);
+  thread_close(th);
+  rz_hub_free(g_hub);
+  rz_server_free(srv);
+  rz_router_free(g_router);
+  return rc;
+}

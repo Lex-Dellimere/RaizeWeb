@@ -22,6 +22,7 @@ framework/
 ├── static/      file serving: mime types, ETag/304, traversal-safe
 ├── ws/          WebSocket protocol: handshake, frames, UTF-8, connection state
 ├── poll/        epoll event loop + cross-thread mailbox (Linux x86-64, syscall)
+├── hub/         WebSocket routes: upgrade on a worker, serve on one loop thread
 ├── orm/         storage vtable, unit of work, migrations hook (no database)
 ├── config/      env + config, validated at startup, immutable after
 └── str/         the base layer: string views, owned copies, buffers, splitting
@@ -119,7 +120,10 @@ see `docs/design/realtime.md`. Done so far: the WebSocket protocol
 (`framework/ws`, interpreter-tested) and the epoll loop (`framework/poll`),
 proven together by `make ws-test` (18 checks over real sockets: echo,
 fragments, ping, close codes 1002/1007/1009, a cross-thread broadcast, 50
-concurrent clients).
+concurrent clients). `framework/hub` mounts WebSockets on the real server: a
+route calls `rz_hub_upgrade`, the worker writes the 101 and hands the socket
+to the hub thread, and goes back to accept(). `make hub-test` runs the same 18
+checks through the router with 4 workers, plus plain HTTP on the same port.
 
 ## Status
 

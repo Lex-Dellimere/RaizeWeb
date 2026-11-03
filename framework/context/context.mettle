@@ -24,6 +24,21 @@ import "header";
 import "request";
 import "response";
 
+// A request a handler has accepted for a protocol upgrade (WebSocket). The
+// handler fills ctx->upgrade; after it returns, the connection loop calls
+// `adopt` on the worker thread with the socket and any bytes already read
+// past the request. When adopt returns 0 the socket belongs to the adopter:
+// the loop writes nothing more and does not close it. Non-zero means the
+// upgrade failed before anything was written, and the loop answers 500.
+// `owner` and `arg` are typed by the module that made the upgrade
+// (framework/hub). The struct itself lives in the request arena.
+export struct RzUpgrade {
+  adopt: fn(RzUpgrade*, int64, uint8*, int64) -> int32;
+  owner: rawptr;
+  arg: rawptr;
+  key: string;            // e.g. Sec-WebSocket-Key, a view into the request
+}
+
 export struct RzContext {
   req: RzRequest*;
   resp: RzResponse*;
@@ -33,6 +48,7 @@ export struct RzContext {
   status: int32;          // set by the handler, read by the log frame
   bytes_written: int64;   // set by the server after the write
   aborted: bool;          // a middleware refused: do not call the handler
+  upgrade: RzUpgrade*;    // set by an upgrading handler, else 0
 }
 
 // Binds a context to a request/response pair. `resp->arena` is set here, once,
@@ -47,6 +63,7 @@ export fn rz_ctx_init(ctx: RzContext*, req: RzRequest*, resp: RzResponse*, arena
   ctx->status = 0;
   ctx->bytes_written = 0;
   ctx->aborted = false;
+  ctx->upgrade = 0;
   if (resp != 0) {
     resp->arena = arena;
   }

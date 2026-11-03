@@ -133,6 +133,12 @@ export fn rz_worker_main(arg: cstring) -> uint32 {
       srv->stats.peak_active = active;
     }
     var w: int64 = rz_conn_serve(srv, fd);
+    if (w == RZ_CONN_DETACHED) {
+      // Upgraded: the socket now belongs to the hub (framework/hub).
+      atomic_dec_i32(&srv->stats.active);
+      served = served + 1;
+      continue;
+    }
     shutdown(fd, SD_SEND());
     closesocket(fd);
     atomic_dec_i32(&srv->stats.active);

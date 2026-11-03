@@ -46,6 +46,10 @@ export const RZ_CONN_CLOSED: int32 = -1;   // peer closed; write nothing
 export const RZ_CONN_TIMEOUT: int32 = -2;  // partial request timed out -> 408
 export const RZ_CONN_ERROR: int32 = -3;    // socket error; write nothing
 
+// rz_conn_serve's return when a handler upgraded the connection and the
+// socket was handed off (ctx->upgrade): the worker must not close it.
+export const RZ_CONN_DETACHED: int64 = -2;
+
 // Reads once, retrying EINTR. Returns the byte count, or 0 with *out_err set.
 fn rz_conn_recv(fd: int64, p: uint8*, n: int64, out_err: int32*) -> int64 {
   if (out_err != 0) { *out_err = RZ_CONN_ERROR; }
@@ -298,6 +302,20 @@ export fn rz_conn_serve(srv: RzServer*, fd: int64) -> int64 {
       atomic_inc_i32(&srv->stats.handler_errors);
     }
     if (ctx.status == 0) { ctx.status = resp->status; }
+
+    // ---- protocol upgrade: hand the socket over --------------------------
+    if (ctx.upgrade != 0 && !ctx.aborted && ctx.upgrade->adopt != 0) {
+      if (ctx.upgrade->adopt(ctx.upgrade, fd, buf, have) == 0) {
+        if (body != 0) { free((rawptr)body); }
+        ctx.status = 101;
+        atomic_inc_i32(&srv->stats.requests);
+        return RZ_CONN_DETACHED;
+      }
+      rz_response_reset(resp);
+      rz_resp_text(resp, 500, rz_conn_refusal_text(500));
+      resp->close_after = true;
+      atomic_inc_i32(&srv->stats.handler_errors);
+    }
 
     // ---- keep-alive decision (before writing) -----------------------------
     var ka: bool = req.keepalive;
