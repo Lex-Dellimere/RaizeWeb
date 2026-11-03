@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>raize chat</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --accent: #c2410c; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c; --accent: #fb923c; } }
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    #log { list-style: none; padding: 0; margin: 16px 0; border-top: 1px solid var(--line); min-height: 240px; }
+    #log li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+    #log b { color: var(--accent); }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px 10px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+    button { padding: 8px 14px; font: inherit; border: 0; border-radius: 6px; background: var(--accent); color: white; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>room:lobby</h1>
+    <p class="muted">Phoenix channels on raize. <span id="status">connecting…</span> · tick <span id="tick">0</span></p>
+    <ul id="log"></ul>
+    <form id="send">
+      <input id="body" maxlength="500" placeholder="Say something" autocomplete="off">
+      <button>Send</button>
+    </form>
+  </main>
+  <script>
+    // A small client for Phoenix's v2 protocol: [join_ref, ref, topic, event, payload].
+    // phoenix.js speaks the same protocol and works against this server unchanged.
+    const user = "guest" + Math.floor(Math.random() * 1000);
+    const topic = "room:lobby";
+    const log = document.getElementById("log");
+    let ref = 0, joinRef = null, ws;
+    const say = (who, text) => {
+      const li = document.createElement("li");
+      const b = document.createElement("b");
+      b.textContent = who + " ";
+      li.append(b, document.createTextNode(text));
+      log.append(li);
+    };
+    const push = (event, payload, t = topic) => {
+      const r = String(++ref);
+      if (event === "phx_join") joinRef = r;
+      ws.send(JSON.stringify([joinRef, r, t, event, payload]));
+    };
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}/socket/websocket?vsn=2.0.0`);
+      ws.onopen = () => { push("phx_join", { user }); document.getElementById("status").textContent = "connected as " + user; };
+      ws.onclose = () => { document.getElementById("status").textContent = "reconnecting…"; setTimeout(connect, 1000); };
+      ws.onmessage = (e) => {
+        const [, , t, event, payload] = JSON.parse(e.data);
+        if (event === "new_msg") say(payload.user, payload.body);
+        if (event === "tick") document.getElementById("tick").textContent = payload.n;
+      };
+    }
+    setInterval(() => ws && ws.readyState === 1 && push("heartbeat", {}, "phoenix"), 30000);
+    document.getElementById("send").onsubmit = (e) => {
+      e.preventDefault();
+      const input = document.getElementById("body");
+      if (input.value.trim()) push("new_msg", { body: input.value });
+      input.value = "";
+    };
+    connect();
+  </script>
+</body>
+</html>

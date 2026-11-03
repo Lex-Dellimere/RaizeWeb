@@ -1,7 +1,7 @@
 # Realtime: WebSockets, channels and LiveView for raize
 
-Status: plan, 2026-11-04. Nothing here is built yet except where a milestone
-says so.
+Status (2026-11-04): M1-M4 are built and tested (`make integration`); M5-M7
+are the plan. Each milestone below says what was actually built.
 
 raize's goal is Phoenix's model in Mettle: server-rendered HTML, channels
 (topic-based pub/sub over a socket), and LiveView (stateful server views that
@@ -78,6 +78,10 @@ Each milestone is committed separately with its tests.
 
 No sockets are involved, and everything is covered by `@test`.
 
+**Built:** `framework/ws/{sha1,handshake,frame,utf8,conn}.mettle`. `RzWsConn`
+is the per-connection state machine (fragmentation, ping/pong, close
+handshake, 1002/1007/1009), pure and interpreter-tested.
+
 ### M2 `framework/poll`: the event loop
 
 - `rz_poll_*` wraps `epoll_create1`, `epoll_ctl`, `epoll_wait` and `eventfd2`,
@@ -85,6 +89,9 @@ No sockets are involved, and everything is covered by `@test`.
 - A waker (an eventfd) and an MPSC queue let other threads post messages to
   the loop. This is the seam a broadcast from an HTTP worker goes through.
 - Tested by a built fixture: N clients, echo, wakeups from other threads.
+
+**Built:** `framework/poll/{sys,poll}.mettle`; `tests/fixtures/poll/ws_echo`
+plus `tests/integration/ws_client.py` (18 checks, debug and release).
 
 ### M3 Upgrading a connection into the hub
 
@@ -98,6 +105,13 @@ every upgraded socket. The worker goes back to `accept()`.
 - Later step (not M3): move HTTP onto the loop too and retire the worker pool.
   Only `conn.mettle` changes. The parser is already a pure function.
 
+**Built:** `framework/hub`. The seam is `RzContext.upgrade` (an `RzUpgrade`
+with an `adopt` callback): `rz_hub_upgrade` sets it and returns 101, the
+connection loop calls `adopt` on the worker (which writes the 101 and posts
+the fd) and returns `RZ_CONN_DETACHED`. `rz_hub_post_call` runs a function on
+the hub thread from anywhere, the nearest thing to sending a process a
+message until the runtime exists.
+
 ### M4 PubSub and channels
 
 - `RzPubSub`: topic name to subscriber list, owned by the hub.
@@ -109,6 +123,11 @@ every upgraded socket. The worker goes back to `accept()`.
   `handle_info(msg, sock)` and `terminate(reason, sock)`.
 - Topic routing (`"room:*"`) reuses the router trie's wildcard rules.
 - Demo: `examples/chat`, served to the stock `phoenix.js` client.
+
+**Built:** `framework/channel/{wire,types,members,channel}.mettle` and
+`examples/chat` (with a small v2 client in the page; phoenix.js itself was
+not fetched). `tests/integration/chat_client.py`: 22 checks. Membership is a
+flat table scanned per broadcast; a topic index replaces it when needed.
 
 ### M5 Templates v2: statics and dynamics
 

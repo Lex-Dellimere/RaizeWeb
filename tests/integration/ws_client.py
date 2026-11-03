@@ -45,10 +45,10 @@ def recv_until(s, marker):
     return data
 
 
-def handshake(s, key=None, version="13", extra=""):
+def handshake(s, key=None, version="13", extra="", path="/socket"):
     key = key or base64.b64encode(os.urandom(16)).decode()
     req = (
-        "GET /socket HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
+        f"GET {path} HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: {version}\r\n{extra}\r\n"
     )

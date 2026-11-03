@@ -1,0 +1,180 @@
+// examples/chat — Phoenix-style channels on raize.
+//
+//   GET /                   the chat page (embedded at build time)
+//   GET /socket/websocket   the channel socket (phoenix.js's default path)
+//
+// Channel "room:*":
+//   join        payload {"user": "..."}; "room:secret" is refused
+//   new_msg     {"body": "..."} -> broadcast new_msg {"user", "body"} to the room
+//   ping        reply {"pong": true}
+//   whoami      push "you" {"user": ...} to the caller only
+//   leave       frees the member's name
+// A ticker thread broadcasts "tick" {"n": N} to room:lobby every 200 ms with
+// rz_chan_post_broadcast, the any-thread API.
+//
+// Build and run from the repository root:
+//   ./mettle-build/bin/mettle --build examples/chat/app.mettle -o build/chat
+//   ./build/chat 8090
+
+import "std/io";
+import "std/mem";
+import "std/thread";
+import "../../framework/str/str";
+import "../../framework/context/context";
+import "../../framework/router/router";
+import "../../framework/server/server";
+import "../../framework/hub/hub";
+import "../../framework/channel/channel";
+
+const PAGE: string = import_str "index.html";
+const NAME_MAX: int64 = 32;
+
+// Per-member state, owned by the channel member (freed in room_leave).
+struct ChatMember {
+  name: string;          // owned
+}
+
+var g_router: RzRouter* = 0;
+var g_chans: RzChanRouter* = 0;
+var g_stop: int32 = 0;
+
+// ---- channel callbacks (hub thread) ---------------------------------------
+
+fn room_join(ctx: RzChanCtx*, payload: string) -> int32 {
+  if (raize_str_eq(ctx->topic, "room:secret")) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"unauthorized\"}");
+    return 1;
+  }
+  var a: RzArena* = rz_arena_new();
+  var user: string = "anon";
+  var got: string = raize_str_empty();
+  if (rz_json_get_str(payload, "user", &got, a) && got.length > 0 && (int64)got.length <= NAME_MAX) {
+    user = got;
+  }
+  var cm: ChatMember* = (ChatMember*)calloc(1, sizeof(ChatMember));
+  if (cm == 0) {
+    rz_arena_free(a);
+    return 1;
+  }
+  cm->name = raize_str_dup(user);
+  ctx->state = (rawptr)cm;
+  rz_arena_free(a);
+  var b: RaizeBuf* = raize_buf_new();
+  raize_buf_add(b, "{{\"room\":\"");
+  rz_json_escape_into(b, ctx->topic);
+  raize_buf_add(b, "\"}");
+  rz_chan_reply_json(ctx, raize_buf_str(b));
+  raize_buf_free(b);
+  return 0;
+}
+
+fn member_name(ctx: RzChanCtx*) -> string {
+  if (ctx->state == 0) { return "anon"; }
+  return ((ChatMember*)ctx->state)->name;
+}
+
+fn room_in(ctx: RzChanCtx*, event: string, payload: string) -> int32 {
+  if (raize_str_eq(event, "ping")) {
+    rz_chan_reply_json(ctx, "{{\"pong\":true}");
+    return 0;
+  }
+  var b: RaizeBuf* = raize_buf_new();
+  var rc: int32 = 0;
+  if (raize_str_eq(event, "whoami")) {
+    raize_buf_add(b, "{{\"user\":\"");
+    rz_json_escape_into(b, member_name(ctx));
+    raize_buf_add(b, "\"}");
+    rz_chan_push(ctx, "you", raize_buf_str(b));
+  } else if (raize_str_eq(event, "new_msg")) {
+    var a: RzArena* = rz_arena_new();
+    var body: string = raize_str_empty();
+    if (rz_json_get_str(payload, "body", &body, a) && body.length > 0) {
+      raize_buf_add(b, "{{\"user\":\"");
+      rz_json_escape_into(b, member_name(ctx));
+      raize_buf_add(b, "\",\"body\":\"");
+      rz_json_escape_into(b, body);
+      raize_buf_add(b, "\"}");
+      rz_chan_broadcast(ctx->router, ctx->topic, "new_msg", raize_buf_str(b));
+    } else {
+      rz_chan_reply_json(ctx, "{{\"reason\":\"empty body\"}");
+      rc = 1;
+    }
+    rz_arena_free(a);
+  } else {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"unknown event\"}");
+    rc = 1;
+  }
+  raize_buf_free(b);
+  return rc;
+}
+
+fn room_leave(ctx: RzChanCtx*) {
+  if (ctx->state == 0) { return; }
+  var cm: ChatMember* = (ChatMember*)ctx->state;
+  raize_str_free(cm->name);
+  free(ctx->state);
+  ctx->state = 0;
+}
+
+// ---- HTTP -----------------------------------------------------------------
+
+fn h_index(ctx: RzContext*) -> int32 {
+  rz_ctx_html(ctx, 200, PAGE);
+  return 200;
+}
+
+fn h_socket(ctx: RzContext*) -> int32 {
+  return rz_chan_upgrade(ctx, g_chans);
+}
+
+fn handle(ctx: RzContext*) -> int32 {
+  return rz_router_handle(g_router, ctx);
+}
+
+fn ticker(arg: cstring) -> uint32 {
+  var n: int64 = 0;
+  while (atomic_compare_exchange_i32(&g_stop, 0, 0) == 0) {
+    thread_sleep_ms(200);
+    n = n + 1;
+    var b: RaizeBuf* = raize_buf_new();
+    raize_buf_add(b, "{{\"n\":");
+    raize_buf_add_int(b, n);
+    raize_buf_add(b, "}");
+    rz_chan_post_broadcast(g_chans, "room:lobby", "tick", raize_buf_str(b));
+    raize_buf_free(b);
+  }
+  return 0;
+}
+
+fn main(argc: int32, argv: cstring*) -> int32 {
+  var port: int32 = 8090;
+  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+
+  var hub: RzHub* = rz_hub_new(rz_hub_opts_default());
+  if (hub == 0 || rz_hub_start(hub) != 0) { println("chat: hub failed"); return 1; }
+  g_chans = rz_chan_router_new(hub, 0);
+  if (g_chans == 0) { println("chat: channels failed"); return 1; }
+  rz_chan_define(g_chans, "room:*", &room_join, &room_in, &room_leave);
+
+  g_router = rz_router_new();
+  var a0: int32 = rz_router_add(g_router, "GET", "/", &h_index);
+  var a1: int32 = rz_router_add(g_router, "GET", "/socket/websocket", &h_socket);
+  if (g_router == 0 || a0 != RZ_E_OK || a1 != RZ_E_OK) { println("chat: routes failed"); return 2; }
+
+  var opts: RzServerOpts = rz_server_opts_default();
+  opts.port = port;
+  var srv: RzServer* = rz_server_new(opts);
+  if (srv == 0 || rz_server_set_handler(srv, &handle) != 0) { println("chat: server failed"); return 3; }
+
+  var th: int64 = CreateThread(0, 0, &ticker, 0, 0, 0);
+  println("chat: listening on 127.0.0.1:{port}");
+  var rc: int32 = rz_server_run(srv);
+  atomic_exchange_i32(&g_stop, 1);
+  thread_join_infinite(th);
+  thread_close(th);
+  rz_hub_free(hub);
+  rz_chan_router_free(g_chans);
+  rz_server_free(srv);
+  rz_router_free(g_router);
+  return rc;
+}

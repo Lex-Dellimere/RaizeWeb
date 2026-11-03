@@ -11,7 +11,10 @@
 // Handler contract (docs/design/realtime.md §4). Every callback runs on the
 // hub thread, one at a time, and must not block:
 //
-//   on_open(hub, sock, arg) -> rawptr     after the 101 is sent; returns the
+//   on_open(hub, sock, arg) -> rawptr     after the 101 is sent; `arg` is the
+//                                         handler pointer itself (so a struct
+//                                         that embeds RzHubHandler first can
+//                                         find itself); returns the
 //                                         per-socket state (may be 0)
 //   on_message(hub, sock, state, opcode, payload) -> int32
 //                                         a complete message; the payload
@@ -36,6 +39,7 @@ export const RZ_HUB_MSG_SEND: int32 = 2;       // a: sock, b: opcode, ptr: RzHub
 export const RZ_HUB_MSG_BROADCAST: int32 = 3;  // b: opcode, ptr: RzHubBytes*
 export const RZ_HUB_MSG_CLOSE: int32 = 4;      // a: sock, b: close code
 export const RZ_HUB_MSG_STOP: int32 = 5;
+export const RZ_HUB_MSG_CALL: int32 = 6;       // ptr: RzHubCall*
 
 export struct RzHubHandler {
   on_open: fn(RzHub*, int64, rawptr) -> rawptr;
@@ -69,6 +73,13 @@ export struct RzHubAdopt {
   arg: rawptr;
   early: uint8*;          // bytes read past the upgrade request (owned)
   early_len: int64;
+}
+
+// "Run this on the hub thread": the general way in from another thread
+// (channels use it for cross-thread broadcasts). `fn` owns `arg` and frees it.
+export struct RzHubCall {
+  fn_: fn(RzHub*, rawptr) -> void;
+  arg: rawptr;
 }
 
 // An owned byte copy that crosses threads.

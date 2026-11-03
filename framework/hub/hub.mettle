@@ -93,6 +93,11 @@ export fn rz_hub_free(hub: RzHub*) {
       rz_sys_close(a->fd);
       if (a->early != 0) { free((rawptr)a->early); }
       free((rawptr)a);
+    } else if (m.kind == RZ_HUB_MSG_CALL) {
+      // Run it anyway so its argument is freed by its owner.
+      var call: RzHubCall* = (RzHubCall*)m.ptr;
+      call->fn_(hub, call->arg);
+      free((rawptr)call);
     } else if (m.ptr != 0) {
       var b: RzHubBytes* = (RzHubBytes*)m.ptr;
       if (b->data != 0) { free((rawptr)b->data); }
@@ -149,7 +154,7 @@ fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len:
   raize_buf_free(head);
   a->fd = fd;
   a->handler = (RzHubHandler*)up->arg;
-  a->arg = 0;
+  a->arg = up->arg;
   var m: RzPollMsg;
   m.kind = RZ_HUB_MSG_ADOPT;
   m.a = 0;
@@ -255,4 +260,25 @@ export fn rz_hub_post_close(hub: RzHub*, sock: int64, code: int32) -> bool {
   m.b = (int64)code;
   m.ptr = 0;
   return rz_poll_post(hub->poll, m);
+}
+
+// Runs fn_(hub, arg) on the hub thread. fn_ owns arg (and frees it), also
+// when the hub is being freed before it ran. Returns false when the mailbox
+// is full; arg then still belongs to the caller.
+export fn rz_hub_post_call(hub: RzHub*, fn_: fn(RzHub*, rawptr) -> void, arg: rawptr) -> bool {
+  if (hub == 0 || fn_ == 0) { return false; }
+  var call: RzHubCall* = (RzHubCall*)calloc(1, sizeof(RzHubCall));
+  if (call == 0) { return false; }
+  call->fn_ = fn_;
+  call->arg = arg;
+  var m: RzPollMsg;
+  m.kind = RZ_HUB_MSG_CALL;
+  m.a = 0;
+  m.b = 0;
+  m.ptr = (rawptr)call;
+  if (!rz_poll_post(hub->poll, m)) {
+    free((rawptr)call);
+    return false;
+  }
+  return true;
 }

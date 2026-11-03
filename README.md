@@ -23,10 +23,12 @@ framework/
 ├── ws/          WebSocket protocol: handshake, frames, UTF-8, connection state
 ├── poll/        epoll event loop + cross-thread mailbox (Linux x86-64, syscall)
 ├── hub/         WebSocket routes: upgrade on a worker, serve on one loop thread
+├── channel/     Phoenix channels: v2 wire format, topics, join/handle_in/leave
 ├── orm/         storage vtable, unit of work, migrations hook (no database)
 ├── config/      env + config, validated at startup, immutable after
 └── str/         the base layer: string views, owned copies, buffers, splitting
 examples/tasks/  a complete example: template, JSON API, static files
+examples/chat/   Phoenix-style channels: rooms, broadcast, a browser client
 tests/           lint.sh, integration/*.sh, unit/*.mettle, fixtures/
 docs/            architecture review and design notes
 notes/           the Mettle language study this was built on
@@ -124,6 +126,16 @@ concurrent clients). `framework/hub` mounts WebSockets on the real server: a
 route calls `rz_hub_upgrade`, the worker writes the 101 and hands the socket
 to the hub thread, and goes back to accept(). `make hub-test` runs the same 18
 checks through the router with 4 workers, plus plain HTTP on the same port.
+
+`framework/channel` is Phoenix channels on the hub, speaking Phoenix's v2
+wire format (`[join_ref, ref, topic, event, payload]`), so phoenix.js is a
+valid client. `examples/chat` uses it: `./build/chat 8090` serves a chat page
+on :8090. `make chat-test` runs 22 protocol checks
+(join/refuse/unmatched, replies, push, room-isolated broadcast, a broadcast
+posted from another thread, leave, cleanup on disconnect, 30-member rooms).
+
+Next: LiveView (templates that render statics/dynamics, diffs over a
+channel). See `docs/design/realtime.md` §3 M5-M6.
 
 ## Status
 

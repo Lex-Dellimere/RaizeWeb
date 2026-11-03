@@ -186,6 +186,10 @@ fn rz_hub_mailbox(hub: RzHub*, now_ms: int64) -> bool {
       rz_hub_bytes_free(b);
     } else if (m.kind == RZ_HUB_MSG_CLOSE) {
       rz_hub_close_sock(hub, m.a, (int32)m.b);
+    } else if (m.kind == RZ_HUB_MSG_CALL) {
+      var call: RzHubCall* = (RzHubCall*)m.ptr;
+      call->fn_(hub, call->arg);
+      free((rawptr)call);
     } else if (m.kind == RZ_HUB_MSG_STOP) {
       keep = false;
     }
