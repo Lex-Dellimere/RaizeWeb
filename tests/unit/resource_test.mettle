@@ -1,0 +1,309 @@
+// raize/resource tests — every validation, every action status through the memory
+// layer, the PATCH mask, the JSON error mapping (D4), and A7's no-views rule.
+//
+//   ./mettle-build/bin/mettle test tests/unit/resource_test.mettle
+//
+// The definition is built the way generated code builds it (a `comptime for` over the
+// struct's fields, then rz__attr_* / rz__action_*), without rzpp.
+
+import "std/mem";
+import "../../framework/str/str";
+import "../../framework/core/status";
+import "../../framework/context/arena";
+import "../../framework/resource/resource";
+
+struct TNote { id: int64; title: string; body: string; n: int32; big: int64; flag: bool; }
+
+const T_TITLE: int32 = 1;
+const T_BODY: int32 = 2;
+
+fn t_fields(def: RzResourceDef*) {
+  comptime for f in typeof(TNote).fields {
+    rz__resource_field(def, f.name, f.type.kind, (int64)f.offset, (int64)f.type.size);
+  }
+}
+
+fn t_bump(rec: rawptr) {
+  var r: TNote* = (TNote*)rec;
+  r->n = r->n + 1;
+  r->flag = !r->flag;
+}
+
+fn t_spoil(rec: rawptr) {
+  var r: TNote* = (TNote*)rec;
+  r->title = "x";
+}
+
+// title: @required @min_length 3 @max_length 10; body: @max_length 5.
+// create accepts everything; update accepts title, body, n, flag (not big).
+fn t_def(def: RzResourceDef*, with_update: bool) {
+  memset((rawptr)def, 0, (int64)sizeof(RzResourceDef));
+  rz__resource_begin(def, "tnote", "TNote", (int64)sizeof(TNote));
+  t_fields(def);
+  rz__attr_required(def, T_TITLE);
+  rz__attr_min_length(def, T_TITLE, 3);
+  rz__attr_max_length(def, T_TITLE, 10);
+  rz__attr_max_length(def, T_BODY, 5);
+  rz__action_create(def, (int64)62);
+  rz__action_read(def);
+  if (with_update) { rz__action_update(def, (int64)46); }
+  rz__action_destroy(def);
+  rz__action_custom(def, "bump", &t_bump);
+  rz__action_custom(def, "spoil", &t_spoil);
+  rz__resource_end(def);
+}
+
+fn t_rec(r: TNote*, title: string, body: string, n: int32, big: int64, flag: bool) {
+  memset((rawptr)r, 0, (int64)sizeof(TNote));
+  r->title = title;
+  r->body = body;
+  r->n = n;
+  r->big = big;
+  r->flag = flag;
+}
+
+// ---------------------------------------------------------------------------
+// Definition and validations
+// ---------------------------------------------------------------------------
+
+@test fn t_definition() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  if (def.status != RZ_OK || !def.ready) { return 1; }
+  if (def.nfields != 6) { return 2; }
+  if (def.fields[0].kind != RZ_KIND_INT64 || (def.fields[0].flags & RZ_FIELD_PK) == 0) { return 3; }
+  if (def.fields[1].kind != RZ_KIND_STRING || def.fields[3].kind != RZ_KIND_INT32) { return 4; }
+  if (def.fields[4].kind != RZ_KIND_INT64 || def.fields[5].kind != RZ_KIND_BOOL) { return 5; }
+  if (def.fields[1].min_len != 3 || def.fields[1].max_len != 10 || def.fields[2].min_len != -1) { return 6; }
+  if (rz__resource_action(&def, RZ__ACTION_UPDATE, "") < 0) { return 7; }
+  if (rz__resource_action(&def, RZ__ACTION_CUSTOM, "bump") < 0) { return 8; }
+  if (rz__resource_action(&def, RZ__ACTION_CUSTOM, "nope") >= 0) { return 9; }
+  var bad: RzResourceDef;
+  memset((rawptr)&bad, 0, (int64)sizeof(RzResourceDef));
+  rz__resource_begin(&bad, "tnote", "TNote", (int64)sizeof(TNote));
+  t_fields(&bad);
+  rz__attr_min_length(&bad, 1, -1);
+  if (bad.status != RZ_E_USAGE) { return 10; }
+  rz__resource_begin(&bad, "tnote", "TNote", (int64)sizeof(TNote));
+  t_fields(&bad);
+  rz__resource_end(&bad);
+  if (bad.status != RZ_E_INVALID) { return 11; }   // no action
+  return 0;
+}
+
+@test fn t_validations() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  var r: TNote;
+  var e: RzErrors;
+  rz_errors_clear(&e);
+  t_rec(&r, "", "", 0, (int64)0, false);
+  if (rz__validate(&def, (rawptr)&r, &e) != RZ_E_INVALID) { return 1; }
+  if (!rz_str_eq(rz_error_text(&e, "title"), "can't be blank")) { return 2; }
+  if (rz_errors_count(&e) != 1 || e.code != RZ_E_INVALID) { return 3; }
+  rz_errors_clear(&e);
+  t_rec(&r, "ab", "", 0, (int64)0, false);
+  rz__validate(&def, (rawptr)&r, &e);
+  if (!rz_str_eq(rz_error_text(&e, "title"), "is too short (at least 3)")) { return 4; }
+  rz_errors_clear(&e);
+  t_rec(&r, "abcdefghijk", "123456", 0, (int64)0, false);
+  rz__validate(&def, (rawptr)&r, &e);
+  if (!rz_str_eq(rz_error_text(&e, "title"), "is too long (at most 10)")) { return 5; }
+  if (!rz_str_eq(rz_error_text(&e, "body"), "is too long (at most 5)")) { return 6; }
+  if (rz_errors_count(&e) != 2) { return 7; }
+  if (!rz_str_eq(rz_error_text(&e, "n"), "")) { return 8; }
+  // Boundaries are inclusive; an empty optional value skips the length checks.
+  rz_errors_clear(&e);
+  t_rec(&r, "abc", "12345", 0, (int64)0, false);
+  if (rz__validate(&def, (rawptr)&r, &e) != RZ_OK || rz_errors_count(&e) != 0) { return 9; }
+  t_rec(&r, "abcdefghij", "", 0, (int64)0, false);
+  if (rz__validate(&def, (rawptr)&r, &e) != RZ_OK) { return 10; }
+  // errs may be 0.
+  t_rec(&r, "", "", 0, (int64)0, false);
+  if (rz__validate(&def, (rawptr)&r, (RzErrors*)0) != RZ_E_INVALID) { return 11; }
+  return 0;
+}
+
+@test fn t_errors_api() -> int32 {
+  var e: RzErrors;
+  rz_errors_clear(&e);
+  if (rz_errors_count(&e) != 0 || e.code != RZ_OK) { return 1; }
+  if (rz_errors_count((RzErrors*)0) != 0) { return 2; }
+  if (!rz_str_eq(rz_error_text((RzErrors*)0, "a"), "")) { return 3; }
+  rz__errors_add(&e, "a", "first");
+  rz__errors_add(&e, "a", "second is dropped");
+  if (rz_errors_count(&e) != 1 || !rz_str_eq(rz_error_text(&e, "a"), "first")) { return 4; }
+  var names: RzStrList* = rz_str_split("b c d e f g h i j", 32);
+  for k in 0..names->len { rz__errors_add(&e, names->items[k], "x"); }
+  if (rz_errors_count(&e) != RZ_ERRORS_MAX) { return 5; }
+  if (!rz_str_eq(rz_error_text(&e, "i"), "")) { return 6; }   // the 9th is dropped
+  rz_strlist_free(names);
+  rz_errors_clear(&e);
+  var long: string = "0123456789012345678901234567890123456789012345678901234567890123456789";
+  rz__errors_add(&e, "a", long);
+  if (rz_error_text(&e, "a").length != (uint64)RZ_ERROR_TEXT_MAX) { return 7; }
+  rz_errors_clear(&e);
+  if (rz_errors_count(&e) != 0 || !rz_str_eq(rz_error_text(&e, "a"), "")) { return 8; }
+  if (rz__errors_code(&e, RZ_E_NOT_FOUND) != RZ_E_NOT_FOUND || e.code != RZ_E_NOT_FOUND) { return 9; }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Actions through the memory layer
+// ---------------------------------------------------------------------------
+
+@test fn t_create_read_destroy() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  var dl: RzDataLayer* = rz_mem_layer_new(&def, 2);
+  if (dl == 0) { return 1; }
+  var a: RzArena* = rz_arena_new();
+  var e: RzErrors;
+  var r: TNote;
+  var id: int64 = 0;
+  t_rec(&r, "  hello  ", " b ", -5, (int64)6000000000, true);
+  if (rz__create(dl, &def, (rawptr)&r, &id, &e) != RZ_OK || id != 1 || e.code != RZ_OK) { return 2; }
+  var out: TNote;
+  if (rz__get(dl, &def, 1, (rawptr)&out, a) != RZ_OK) { return 3; }
+  if (!rz_str_eq(out.title, "hello") || !rz_str_eq(out.body, "b")) { return 4; }
+  if (out.n != -5 || out.big != (int64)6000000000 || !out.flag || out.id != 1) { return 5; }
+  t_rec(&r, "x", "", 0, (int64)0, false);
+  if (rz__create(dl, &def, (rawptr)&r, &id, &e) != RZ_E_INVALID || e.code != RZ_E_INVALID) { return 6; }
+  if (rz__count(dl, &def) != 1) { return 7; }
+  t_rec(&r, "second", "", 0, (int64)0, false);
+  if (rz__create(dl, &def, (rawptr)&r, 0, 0) != RZ_OK) { return 8; }
+  t_rec(&r, "third", "", 0, (int64)0, false);
+  if (rz__create(dl, &def, (rawptr)&r, 0, &e) != RZ_E_FULL || e.code != RZ_E_FULL) { return 9; }
+  var recs: RzRecords;
+  if (rz__read(dl, &def, &recs, a) != RZ_OK || recs.count != 2) { return 10; }
+  var items: TNote* = (TNote*)recs.items;
+  if (items[0].id != 1 || items[1].id != 2 || !rz_str_eq(items[1].title, "second")) { return 11; }
+  if (rz__get(dl, &def, 9, (rawptr)&out, a) != RZ_E_NOT_FOUND) { return 12; }
+  if (rz__destroy(dl, &def, 1, &e) != RZ_OK) { return 13; }
+  if (rz__destroy(dl, &def, 1, &e) != RZ_E_NOT_FOUND || e.code != RZ_E_NOT_FOUND) { return 14; }
+  if (rz__count(dl, &def) != 1) { return 15; }
+  // Misuse: no layer, or a layer that stores another resource.
+  var other: RzResourceDef;
+  t_def(&other, false);
+  if (rz__create((RzDataLayer*)0, &def, (rawptr)&r, 0, &e) != RZ_E_USAGE) { return 16; }
+  if (rz__create(dl, &other, (rawptr)&r, 0, &e) != RZ_E_USAGE || e.code != RZ_E_USAGE) { return 17; }
+  if (rz__count((RzDataLayer*)0, &def) != 0) { return 18; }
+  rz_arena_free(a);
+  rz_data_layer_free(dl);
+  return 0;
+}
+
+@test fn t_update_mask() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  var dl: RzDataLayer* = rz_mem_layer_new(&def, 4);
+  var a: RzArena* = rz_arena_new();
+  var e: RzErrors;
+  var r: TNote;
+  var out: TNote;
+  t_rec(&r, "orig", "b", 7, (int64)70, false);
+  rz__create(dl, &def, (rawptr)&r, 0, 0);
+  // Only title (bit 1) and flag (bit 5) are taken; body, n keep their values.
+  t_rec(&r, "  new  ", "zzz", 99, (int64)99, true);
+  if (rz__update(dl, &def, 1, (rawptr)&r, (int64)34, &e, (rawptr)&out, a) != RZ_OK) { return 1; }
+  if (!rz_str_eq(out.title, "new") || !rz_str_eq(out.body, "b") || out.n != 7 || !out.flag) { return 2; }
+  // big (bit 4) is not accepted by @update: masked away even when asked for.
+  t_rec(&r, "", "", 0, (int64)12345, false);
+  if (rz__update(dl, &def, 1, (rawptr)&r, (int64)16, &e, (rawptr)0, (RzArena*)0) != RZ_OK) { return 3; }
+  rz__get(dl, &def, 1, (rawptr)&out, a);
+  if (out.big != (int64)70 || !rz_str_eq(out.title, "new") || out.id != 1) { return 4; }
+  // An invalid update reports per field and stores nothing.
+  t_rec(&r, "ab", "toolong", 1, (int64)0, false);
+  if (rz__update(dl, &def, 1, (rawptr)&r, (int64)46, &e, (rawptr)0, (RzArena*)0) != RZ_E_INVALID) { return 5; }
+  if (rz_errors_count(&e) != 2 || !rz_str_eq(rz_error_text(&e, "title"), "is too short (at least 3)")) { return 6; }
+  rz__get(dl, &def, 1, (rawptr)&out, a);
+  if (!rz_str_eq(out.title, "new") || !rz_str_eq(out.body, "b") || out.n != 7) { return 7; }
+  if (rz__update(dl, &def, 9, (rawptr)&r, (int64)2, &e, (rawptr)0, (RzArena*)0) != RZ_E_NOT_FOUND) { return 8; }
+  if (rz__update(dl, &def, 1, (rawptr)0, (int64)2, &e, (rawptr)0, (RzArena*)0) != RZ_E_USAGE) { return 9; }
+  // Without @update the action is unsupported.
+  var plain: RzResourceDef;
+  t_def(&plain, false);
+  var dl2: RzDataLayer* = rz_mem_layer_new(&plain, 1);
+  if (rz__update(dl2, &plain, 1, (rawptr)&r, (int64)2, &e, (rawptr)0, (RzArena*)0) != RZ_E_UNSUPPORTED) { return 10; }
+  rz_data_layer_free(dl2);
+  rz_arena_free(a);
+  rz_data_layer_free(dl);
+  return 0;
+}
+
+@test fn t_custom_action() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  var dl: RzDataLayer* = rz_mem_layer_new(&def, 2);
+  var a: RzArena* = rz_arena_new();
+  var e: RzErrors;
+  var r: TNote;
+  var out: TNote;
+  t_rec(&r, "count", "", 41, (int64)0, false);
+  rz__create(dl, &def, (rawptr)&r, 0, 0);
+  if (rz__action(dl, &def, "bump", 1, &e, (rawptr)&out, a) != RZ_OK) { return 1; }
+  if (out.n != 42 || !out.flag || !rz_str_eq(out.title, "count")) { return 2; }
+  if (rz__action(dl, &def, "bump", 1, &e, (rawptr)0, (RzArena*)0) != RZ_OK) { return 3; }
+  rz__get(dl, &def, 1, (rawptr)&out, a);
+  if (out.n != 43 || out.flag) { return 4; }
+  // A change that breaks a validation is refused and stores nothing.
+  if (rz__action(dl, &def, "spoil", 1, &e, (rawptr)0, (RzArena*)0) != RZ_E_INVALID) { return 5; }
+  if (!rz_str_eq(rz_error_text(&e, "title"), "is too short (at least 3)")) { return 6; }
+  rz__get(dl, &def, 1, (rawptr)&out, a);
+  if (!rz_str_eq(out.title, "count")) { return 7; }
+  if (rz__action(dl, &def, "bump", 5, &e, (rawptr)0, (RzArena*)0) != RZ_E_NOT_FOUND) { return 8; }
+  if (rz__action(dl, &def, "nope", 1, &e, (rawptr)0, (RzArena*)0) != RZ_E_UNSUPPORTED) { return 9; }
+  rz_arena_free(a);
+  rz_data_layer_free(dl);
+  return 0;
+}
+
+// A7: a copy that runs out of arena never leaves views into the source.
+@test fn t_copy_no_views() -> int32 {
+  var def: RzResourceDef;
+  t_def(&def, true);
+  var b: RzBuf* = rz_buf_new();
+  for k in 0..70000 { rz_buf_add_byte(b, 97); }
+  var src: TNote;
+  t_rec(&src, rz_buf_str(b), "tail", 1, (int64)2, true);
+  var dst: TNote;
+  var a: RzArena* = rz_arena_new();
+  if (rz_record_copy_into(&def, (rawptr)&dst, (rawptr)&src, a) != RZ_E_NOMEM) { return 1; }
+  if (dst.title.length != 0 || dst.body.length != 0) { return 2; }
+  if (dst.n != 1 || dst.big != (int64)2) { return 3; }
+  rz_arena_free(a);
+  rz_buf_free(b);
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// JSON API error mapping (D4)
+// ---------------------------------------------------------------------------
+
+fn t_map(rc: int32, e: RzErrors*, status: int32, body: string) -> bool {
+  var b: RzBuf* = rz_buf_new();
+  var st: int32 = rz__api_error_json(b, rc, e);
+  var ok: bool = st == status && rz_str_eq(rz_buf_str(b), body);
+  rz_buf_free(b);
+  return ok;
+}
+
+@test fn t_status_mapping() -> int32 {
+  var e: RzErrors;
+  rz_errors_clear(&e);
+  if (!t_map(RZ_E_NOT_FOUND, (RzErrors*)0, 404, "{{\"error\":\"not found\"}")) { return 1; }
+  if (!t_map(RZ_E_FULL, (RzErrors*)0, 409, "{{\"error\":\"full\"}")) { return 2; }
+  if (!t_map(RZ_E_CONFLICT, (RzErrors*)0, 409, "{{\"error\":\"conflict\"}")) { return 3; }
+  // A7: RZ_E_INVALID from a layer with no messages (errs 0 or empty) is a plain 400.
+  if (!t_map(RZ_E_INVALID, (RzErrors*)0, 400, "{{\"error\":\"invalid\"}")) { return 4; }
+  if (!t_map(RZ_E_INVALID, &e, 400, "{{\"error\":\"invalid\"}")) { return 5; }
+  rz__errors_add(&e, "title", "can't be blank");
+  rz__errors_add(&e, "body", "is \"bad\"");
+  if (!t_map(RZ_E_INVALID, &e, 400, "{{\"error\":\"invalid\",\"fields\":{{\"title\":\"can't be blank\",\"body\":\"is \\\"bad\\\"\"}}")) { return 6; }
+  if (!t_map(RZ_E_USAGE, &e, 500, "{{\"error\":\"internal\"}")) { return 7; }
+  if (!t_map(RZ_E_NOMEM, (RzErrors*)0, 500, "{{\"error\":\"internal\"}")) { return 8; }
+  if (!t_map(RZ_E_UNSUPPORTED, (RzErrors*)0, 500, "{{\"error\":\"internal\"}")) { return 9; }
+  if (!t_map(RZ_E_DATA_LAYER, (RzErrors*)0, 500, "{{\"error\":\"internal\"}")) { return 10; }
+  if (!t_map(RZ_E_IO, (RzErrors*)0, 500, "{{\"error\":\"internal\"}")) { return 11; }
+  return 0;
+}

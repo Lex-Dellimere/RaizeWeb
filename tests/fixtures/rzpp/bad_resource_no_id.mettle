@@ -1,0 +1,6 @@
+@resource
+@create(text) @read
+struct Note {
+  text: string;
+}
+// expect: 3: @resource Note: the first field must be `id: int64` (the primary key) — add it first

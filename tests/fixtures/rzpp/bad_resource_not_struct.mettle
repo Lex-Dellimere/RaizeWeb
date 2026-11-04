@@ -1,0 +1,4 @@
+@resource
+@create(text) @read
+fn note_make() -> int32 { return 0; }
+// expect: 1: @resource must be directly above a struct — move it onto the struct it describes

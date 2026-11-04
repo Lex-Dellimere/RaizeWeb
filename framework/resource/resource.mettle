@@ -5,13 +5,15 @@
 // An app declares a resource with decorators that tools/rzpp expands:
 //
 //   @resource
-//   @required(text) @max_length(text, 40)
-//   @create(text) @read @destroy
+//   @required(text) @min_length(text, 2) @max_length(text, 40)
+//   @create(text) @read @update(text, pinned) @destroy
 //   @action(pin, note_set_pinned)
 //   struct Note { id: int64; text: string; pinned: bool; }
 //
 // and gets a typed code interface (note_create, note_read, note_get, note_count,
-// note_destroy, note_pin), `note_resource()` and `note_json_api(app, base, dl)`.
+// note_update, note_destroy, note_pin), `note_resource()` and
+// `note_json_api(app, base, dl)` (GET/POST base, GET/PATCH/DELETE base/:id,
+// POST base/:id/pin).
 // Records live in a data layer (layer.mettle); rz_mem_layer_new is the in-memory one.
 
 import "def";

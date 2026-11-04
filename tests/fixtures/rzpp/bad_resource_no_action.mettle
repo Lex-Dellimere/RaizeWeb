@@ -1,0 +1,4 @@
+@resource
+@required(text) @max_length(text, 40)
+struct Note { id: int64; text: string; }
+// expect: 1: @resource Note declares no action — add @create(fields), @read, @update(fields), @destroy or @action(name, fn)

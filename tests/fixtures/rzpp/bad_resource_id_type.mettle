@@ -1,0 +1,7 @@
+@resource
+@create(text) @read
+struct Note {
+  id: int32;
+  text: string;
+}
+// expect: 4: @resource Note: id is int32, not int64 — write `id: int64`

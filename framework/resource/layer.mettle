@@ -70,7 +70,9 @@ export fn rz_field_get_str(rec: rawptr, f: RzField*) -> string {
 
 /// Writes a string field (the view itself; nothing is copied or freed).
 ///
-/// in:      rec  a record; f a field of kind RZ_KIND_STRING; s the new value
+/// in:      rec  a record
+///          f    a field of kind RZ_KIND_STRING
+///          s    the new value
 /// returns: nothing (ignored for another kind)
 /// owns:    the record keeps the view `s`; the caller decides who owns its bytes
 /// thread:  any
@@ -83,7 +85,8 @@ export fn rz_field_set_str(rec: rawptr, f: RzField*, s: string) {
 
 /// Reads an int32 or int64 field, widened to int64.
 ///
-/// in:      rec  a record; f a field of kind RZ_KIND_INT32 or RZ_KIND_INT64
+/// in:      rec  a record
+///          f    a field of kind RZ_KIND_INT32 or RZ_KIND_INT64
 /// returns: the value (0 for another kind)
 /// owns:    nothing
 /// thread:  any
@@ -96,7 +99,9 @@ export fn rz_field_get_int(rec: rawptr, f: RzField*) -> int64 {
 
 /// Writes an int32 or int64 field (int32 truncates).
 ///
-/// in:      rec  a record; f an integer field; v the value
+/// in:      rec  a record
+///          f    an integer field
+///          v    the value
 /// returns: nothing (ignored for another kind)
 /// owns:    nothing
 /// thread:  any
@@ -108,7 +113,8 @@ export fn rz_field_set_int(rec: rawptr, f: RzField*, v: int64) {
 
 /// Reads a bool field.
 ///
-/// in:      rec  a record; f a field of kind RZ_KIND_BOOL
+/// in:      rec  a record
+///          f    a field of kind RZ_KIND_BOOL
 /// returns: the value (false for another kind)
 /// owns:    nothing
 /// thread:  any
@@ -121,7 +127,9 @@ export fn rz_field_get_bool(rec: rawptr, f: RzField*) -> bool {
 
 /// Writes a bool field.
 ///
-/// in:      rec  a record; f a field of kind RZ_KIND_BOOL; v the value
+/// in:      rec  a record
+///          f    a field of kind RZ_KIND_BOOL
+///          v    the value
 /// returns: nothing (ignored for another kind)
 /// owns:    nothing
 /// thread:  any
@@ -140,6 +148,7 @@ export fn rz_field_set_bool(rec: rawptr, f: RzField*, v: bool) {
 ///          src    the record to copy; borrowed
 ///          arena  receives the string bytes
 /// returns: RZ_OK; RZ_E_USAGE for a 0 argument; RZ_E_NOMEM when the arena is full
+///          (then every string of `dst` is "" or an arena copy, never a view of `src`)
 /// owns:    `dst`'s strings are owned by `arena`
 /// thread:  any (the arena must be the caller's)
 /// example:
@@ -147,6 +156,7 @@ export fn rz_field_set_bool(rec: rawptr, f: RzField*, v: bool) {
 export fn rz_record_copy_into(def: RzResourceDef*, dst: rawptr, src: rawptr, arena: RzArena*) -> int32 {
   if (def == 0 || dst == 0 || src == 0 || arena == 0) { return RZ_E_USAGE; }
   memcpy(dst, src, def->size);
+  rz__record_blank_strings(def, dst);
   for i in 0..def->nfields {
     var f: RzField* = &def->fields[i];
     if (f->kind == RZ_KIND_STRING) {
@@ -162,28 +172,41 @@ export fn rz_record_copy_into(def: RzResourceDef*, dst: rawptr, src: rawptr, are
   return RZ_OK;
 }
 
+// Sets every string field of `rec` to "" (the views are dropped, nothing is freed),
+// so a copy that fails half-way never leaves `rec` viewing the source.
+fn rz__record_blank_strings(def: RzResourceDef*, rec: rawptr) {
+  for i in 0..def->nfields {
+    var f: RzField* = &def->fields[i];
+    if (f->kind == RZ_KIND_STRING) { rz_field_set_str(rec, f, rz_str_empty()); }
+  }
+}
+
 /// internal: resource/mem. Copies `src` into `dst` with every string duplicated on
 /// the heap (the layer's own copy).
-/// in:      def, dst, src  as rz_record_copy_into
-/// returns: RZ_OK, or RZ_E_NOMEM (dst then owns the strings copied so far)
+/// in:      def  the records' resource
+///          dst  def->size writable bytes
+///          src  the record to copy; borrowed
+/// returns: RZ_OK, or RZ_E_NOMEM (dst then owns the strings copied so far and holds ""
+///          for the rest; it never views `src`)
 /// owns:    `dst`'s strings are heap copies; free them with rz__record_free_strings
 export fn rz__record_own(def: RzResourceDef*, dst: rawptr, src: rawptr) -> int32 {
   memcpy(dst, src, def->size);
-  var rc: int32 = RZ_OK;
+  rz__record_blank_strings(def, dst);
   for i in 0..def->nfields {
     var f: RzField* = &def->fields[i];
     if (f->kind == RZ_KIND_STRING) {
       var s: string = rz_field_get_str(src, f);
       var c: string = rz_str_dup(s);
-      if (c.length != s.length) { rc = RZ_E_NOMEM; }
+      if (c.length != s.length) { rz_str_free(c); return RZ_E_NOMEM; }
       rz_field_set_str(dst, f, c);
     }
   }
-  return rc;
+  return RZ_OK;
 }
 
 /// internal: resource/mem. Frees the heap strings of a record made by rz__record_own.
-/// in:      def  the resource; rec the record
+/// in:      def  the resource
+///          rec  the record
 /// returns: nothing; the string fields are left empty
 /// owns:    frees the record's strings
 export fn rz__record_free_strings(def: RzResourceDef*, rec: rawptr) {

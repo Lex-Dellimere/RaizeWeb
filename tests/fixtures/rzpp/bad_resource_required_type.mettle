@@ -1,0 +1,5 @@
+@resource
+@create(text) @read
+@required(pinned)
+struct Note { id: int64; text: string; pinned: bool; }
+// expect: 3: @required(pinned): Note.pinned is bool, not string — @required applies to string fields

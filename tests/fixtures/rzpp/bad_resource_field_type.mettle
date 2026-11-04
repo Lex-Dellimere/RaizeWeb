@@ -1,0 +1,8 @@
+@resource
+@create(text) @read
+struct Note {
+  id: int64;
+  text: string;
+  score: float64;
+}
+// expect: 6: Note.score: type float64 is not supported by @resource — use int32, int64, bool or string

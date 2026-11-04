@@ -1,0 +1,6 @@
+@resource
+@create(text) @read
+@action(pin, note_pin)
+struct Note { id: int64; text: string; pinned: bool; }
+fn note_pin(n: Note*) { n->pinned = true; }
+// expect: 3: @action(pin, note_pin) generates fn note_pin, but line 5 already declares it — rename that function

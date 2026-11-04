@@ -1,0 +1,64 @@
+// tests/fixtures/app/resource — every resource decorator on one struct, every field
+// kind (int32, int64, bool, string), the derived JSON API with each D4 status, and the
+// typed code interface driven natively by GET /selftest.
+// Run from the repository root:  ./build/resource [--port N]
+
+import "raize";
+
+@resource
+@required(title) @min_length(title, 3) @max_length(title, 20)
+@max_length(note, 10)
+@create(title, note, priority, estimate, done) @read @destroy
+@update(title, note, priority, done)
+@action(finish, task_mark_done)
+struct Task { id: int64; title: string; note: string; priority: int32; estimate: int64; done: bool; }
+
+// The change fn of @action(finish, ...): plain field edits only (it runs in the lock).
+fn task_mark_done(t: Task*) {
+  t->done = true;
+  t->priority = 0;
+}
+
+fn rec_text(b: RzBuf*, t: Task*) {
+  rz_buf_add(b, " [{t->id} {t->title}|{t->note} p={t->priority} e={t->estimate}");
+  if (t->done) { rz_buf_add(b, " done]"); } else { rz_buf_add(b, " open]"); }
+}
+
+// The code interface, natively: each line is `call=status` plus what it read back.
+fn selftest(ctx: RzContext*) -> int32 {
+  var dl: RzDataLayer* = rz_mem_layer_new(task_resource(), 2);
+  var b: RzBuf* = rz_buf_new();
+  var errs: RzErrors;
+  var id: int64 = 0;
+  var t: Task;
+  rz_buf_add(b, "create={task_create(dl, "  first  ", "n", -7, (int64)5000000000, true, &id, &errs)} id={id}");
+  rz_buf_add(b, " get={task_get(dl, id, &t, ctx->arena)}");
+  rec_text(b, &t);
+  rz_buf_add(b, "\nupdate={task_update(dl, id, " renamed ", "", 2147483647, false, &errs)}");
+  rz_buf_add(b, " get={task_get(dl, id, &t, ctx->arena)}");
+  rec_text(b, &t);
+  rz_buf_add(b, "\nbad update={task_update(dl, id, "ab", "far too long", 1, true, &errs)} n={rz_errors_count(&errs)}");
+  rz_buf_add(b, " title={rz_error_text(&errs, "title")} note={rz_error_text(&errs, "note")} code={errs.code}");
+  rz_buf_add(b, " get={task_get(dl, id, &t, ctx->arena)}");
+  rec_text(b, &t);
+  rz_buf_add(b, "\nfinish={task_finish(dl, id, &errs)} get={task_get(dl, id, &t, ctx->arena)}");
+  rec_text(b, &t);
+  rz_buf_add(b, "\nsecond={task_create(dl, "two", "", 1, (int64)0, false, 0, 0)}");
+  rz_buf_add(b, " full={task_create(dl, "three", "", 1, (int64)0, false, 0, &errs)} code={errs.code}");
+  var list: TaskList = task_read(dl, ctx->arena);
+  rz_buf_add(b, " count={task_count(dl)} read={list.count} last={list.items[list.count - 1].title}");
+  rz_buf_add(b, "\nmissing get={task_get(dl, 99, &t, ctx->arena)} update={task_update(dl, 99, "abc", "", 0, false, 0)}");
+  rz_buf_add(b, " finish={task_finish(dl, 99, 0)} destroy={task_destroy(dl, 99, &errs)}");
+  rz_buf_add(b, "\ndestroy={task_destroy(dl, id, &errs)} count={task_count(dl)} misuse={task_create((RzDataLayer*)0, "abc", "", 0, (int64)0, false, 0, &errs)}");
+  rz_data_layer_free(dl);
+  var st: int32 = rz_ctx_text(ctx, 200, rz_buf_str(b));
+  rz_buf_free(b);
+  return st;
+}
+
+fn resource_app(app: RzApp*) {
+  rz_default(app, "port", "8074");
+  task_json_api(app, "/api/tasks", rz_mem_layer(app, task_resource(), 3));
+  rz_get(app, "/selftest", &selftest);
+}
+fn main() -> int32 { return rz_run("resource", &resource_app); }

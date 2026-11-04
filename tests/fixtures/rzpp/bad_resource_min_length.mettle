@@ -1,0 +1,5 @@
+@resource
+@create(text) @read
+@min_length(text, few)
+struct Note { id: int64; text: string; }
+// expect: 3: @min_length: `few` is not a byte count — write an integer >= 0

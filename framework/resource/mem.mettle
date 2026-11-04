@@ -70,12 +70,14 @@ fn rz__mem_get(ud: rawptr, id: int64, out: rawptr, arena: RzArena*) -> int32 {
   return rc;
 }
 
-// Works on an arena copy; on RZ_OK the copy's strings replace the stored ones.
+// Works on an arena copy and owns the result in a second buffer before touching the
+// stored record, so any failure (apply, validation, memory) leaves the record as it was.
 fn rz__mem_modify(ud: rawptr, id: int64, apply: fn(rawptr, rawptr) -> int32, arg: rawptr, arena: RzArena*) -> int32 {
   var m: Rz_MemStore* = (Rz_MemStore*)ud;
   var def: RzResourceDef* = m->def;
   var work: rawptr = (rawptr)rz_arena_alloc_zeroed(arena, def->size);
-  if (work == 0) { return RZ_E_NOMEM; }
+  var fresh: rawptr = (rawptr)rz_arena_alloc_zeroed(arena, def->size);
+  if (work == 0 || fresh == 0) { return RZ_E_NOMEM; }
   spin_lock(&m->lock);
   var i: int32 = rz__mem_find(m, id);
   if (i < 0) { spin_unlock(&m->lock); return RZ_E_NOT_FOUND; }
@@ -84,8 +86,13 @@ fn rz__mem_modify(ud: rawptr, id: int64, apply: fn(rawptr, rawptr) -> int32, arg
   if (rc == RZ_OK) { rc = apply(arg, work); }
   if (rc == RZ_OK) {
     rz_field_set_int(work, &def->fields[0], id);
-    rz__record_free_strings(def, stored);
-    rc = rz__record_own(def, stored, work);
+    rc = rz__record_own(def, fresh, work);
+    if (rc == RZ_OK) {
+      rz__record_free_strings(def, stored);
+      memcpy(stored, fresh, def->size);
+    } else {
+      rz__record_free_strings(def, fresh);
+    }
   }
   spin_unlock(&m->lock);
   return rc;

@@ -1,0 +1,5 @@
+@resource
+@create(text) @read
+@max_lenght(text, 40)
+struct Note { id: int64; text: string; }
+// expect: 3: unknown decorator @max_lenght — did you mean @max_length?

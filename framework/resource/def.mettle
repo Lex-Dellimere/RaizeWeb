@@ -38,6 +38,8 @@ export const RZ__ACTION_READ: int32 = 2;
 export const RZ__ACTION_DESTROY: int32 = 3;
 /// internal: resource/action, resource/api. A custom update through a change fn.
 export const RZ__ACTION_CUSTOM: int32 = 4;
+/// internal: resource/action, resource/api. Update by id, setting the accepted fields.
+export const RZ__ACTION_UPDATE: int32 = 5;
 
 /// One field of a resource record, as the compiler laid it out.
 export struct RzField {
@@ -46,6 +48,7 @@ export struct RzField {
   offset: int32;    // bytes from the start of the record
   size: int32;      // bytes
   flags: int32;     // RZ_FIELD_* bits
+  min_len: int32;   // @min_length in bytes after trimming, -1 when unset
   max_len: int32;   // @max_length in bytes after trimming, -1 when unset
 }
 
@@ -53,7 +56,7 @@ export struct RzField {
 export struct RzAction {
   name: string;                 // "create", "read", "destroy" or the custom name; static
   kind: int32;                  // RZ__ACTION_*
-  accept: int64;                // bit i set = field i is accepted (create)
+  accept: int64;                // bit i set = field i is accepted (create, update)
   change: fn(rawptr) -> void;   // custom actions: the generated typed wrapper, else 0
 }
 
@@ -119,6 +122,7 @@ export fn rz__resource_field(def: RzResourceDef*, name: string, kind: Kind, offs
   def->fields[i].offset = (int32)offset;
   def->fields[i].size = (int32)size;
   def->fields[i].flags = 0;
+  def->fields[i].min_len = -1;
   def->fields[i].max_len = -1;
   if (i == 0) { def->fields[i].flags = RZ_FIELD_PK; }
   if (def->fields[i].kind == 0) { def->status = RZ_E_UNSUPPORTED; }
@@ -146,6 +150,17 @@ export fn rz__attr_max_length(def: RzResourceDef*, i: int32, n: int32) {
   def->fields[i].max_len = n;
 }
 
+/// internal: generated <snake>_resource(). Sets field `i`'s @min_length.
+/// in:      def  the definition being built
+///          i    field index (a string field)
+///          n    fewest bytes after trimming, >= 0 (an empty value is left to @required)
+/// returns: nothing
+/// owns:    nothing
+export fn rz__attr_min_length(def: RzResourceDef*, i: int32, n: int32) {
+  if (i < 0 || i >= def->nfields || n < 0) { def->status = RZ_E_USAGE; return; }
+  def->fields[i].min_len = n;
+}
+
 fn rz__action_add(def: RzResourceDef*, name: string, kind: int32, accept: int64, change: fn(rawptr) -> void) {
   var i: int32 = def->nactions;
   if (i >= RZ_RESOURCE_MAX_ACTIONS) { def->status = RZ_E_FULL; return; }
@@ -165,6 +180,15 @@ fn rz__no_change(rec: rawptr) { }
 /// owns:    nothing
 export fn rz__action_create(def: RzResourceDef*, accept: int64) {
   rz__action_add(def, "create", RZ__ACTION_CREATE, accept, &rz__no_change);
+}
+
+/// internal: generated <snake>_resource(). Declares @update(fields...).
+/// in:      def     the definition being built
+///          accept  bit i set = field i is accepted (never bit 0, the id)
+/// returns: nothing
+/// owns:    nothing
+export fn rz__action_update(def: RzResourceDef*, accept: int64) {
+  rz__action_add(def, "update", RZ__ACTION_UPDATE, accept, &rz__no_change);
 }
 
 /// internal: generated <snake>_resource(). Declares @read (list, get, count).
