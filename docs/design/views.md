@@ -1,6 +1,8 @@
-# Views: markup as Mettle
+# Views and Signals: markup as Mettle
 
-Status: proposal, 2026-11-04. Replaces the "templates v2" idea in
+Status: proposal, 2026-11-04. **Signal** (`RzSignal`) is raize's name for a
+real-time page in the style of Phoenix LiveView: the model is adapted to
+Mettle, not copied by name. Replaces the "templates v2" idea in
 `realtime.md` §M5 (a separate template language). Nothing is built yet.
 
 ## The idea in one paragraph
@@ -11,7 +13,7 @@ is no template language to learn: holes are Mettle expressions, loops are
 Mettle `for`, branches are Mettle `if`/`match`, components are Mettle
 functions, events are a Mettle `enum`. The literal is compiled at build time
 into constant statics plus dependency-tracked dynamics, the exact shape
-LiveView diffs need. The compiler type-checks every hole, so a mistake is a
+Signal diffs need. The compiler type-checks every hole, so a mistake is a
 normal Mettle diagnostic with a line number.
 
 ## What Mettle already has (verified 2026-11-04)
@@ -31,13 +33,13 @@ normal Mettle diagnostic with a line number.
 - **Not yet:** a generator cannot take a string argument (`@view("...")` is a
   parse error), and there is no tagged-literal form. That gap is §5.
 
-## 1. A LiveView is state + messages + update + view
+## 1. A Signal is state + messages + update + view
 
 Phoenix's model, typed. It is also the shape of a process in the coming
 runtime: state, a mailbox of messages, and a handler.
 
 ```mettle
-import "raize/live";
+import "raize/signal";
 
 struct Todo { id: int32; title: string; done: bool; }
 enum Filter { All, Open, Done }
@@ -91,7 +93,7 @@ fn empty_state(message: string) -> Html {
 }
 
 // Mounted like any route.
-rz_live(router, "/todos", todos_mount, todos_update, todos_view);
+rz_signal(router, "/todos", todos_mount, todos_update, todos_view);   // an RzSignal
 ```
 
 ## 2. The rules (all of them)
@@ -120,7 +122,7 @@ Logic stays in functions (`open_count(s)`, `todo_class(t)`), not in markup.
 Mettle has no ternary and no `if` expression, and the view does not invent
 one.
 
-## 3. How it compiles (what LiveView gets)
+## 3. How it compiles (what a Signal gets)
 
 The `html` processor (written in Mettle, running at compile time) parses the
 literal once and emits ordinary Mettle:
@@ -157,7 +159,7 @@ dynamic in text position goes through the escaper).
   which has the same no-macros problem and solved it the same way), and JSX
   `{}` holes. Models have seen all three.
 - **The runtime fit is free.** State plus message plus update is the process
-  model. When the Mettle runtime lands, a LiveView becomes a process with no
+  model. When the Mettle runtime lands, a Signal becomes a process with no
   API change.
 
 ## 5. What it needs from the compiler, and the path until then
@@ -195,7 +197,7 @@ is designing `mbuild.mettle` custom commands now).
 
 It stays for what it does well: static pages and emails rendered from files
 at startup. Views are the new path for anything interactive. The
-statics/dynamics renderer in `framework/live` is shared by both.
+statics/dynamics renderer in `framework/signal` is shared by both.
 
 ## Open questions
 

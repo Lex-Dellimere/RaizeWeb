@@ -117,7 +117,8 @@ Does not promise, because Mettle cannot:
 
 ## Realtime (in progress)
 
-WebSockets, channels and LiveView, following Phoenix and its wire protocol:
+WebSockets, channels and Signals (real-time pages, after Phoenix LiveView),
+following Phoenix's model and wire protocol:
 see `docs/design/realtime.md`. Done so far: the WebSocket protocol
 (`framework/ws`, interpreter-tested) and the epoll loop (`framework/poll`),
 proven together by `make ws-test` (18 checks over real sockets: echo,
@@ -134,8 +135,13 @@ on :8090. `make chat-test` runs 22 protocol checks
 (join/refuse/unmatched, replies, push, room-isolated broadcast, a broadcast
 posted from another thread, leave, cleanup on disconnect, 30-member rooms).
 
-Next: LiveView (templates that render statics/dynamics, diffs over a
-channel). See `docs/design/realtime.md` §3 M5-M6.
+Next: Signals (`RzSignal`: views written as `html"""..."""` Mettle literals,
+rendered as statics/dynamics with diffs over a
+channel). See `docs/design/views.md`.
+
+`framework/poll` and `framework/hub` are a bridge: the epoll loop and the hub
+thread will be replaced by the BEAM/OTP-style Mettle runtime. App code uses
+only the channel and Signal APIs, so it does not change when that happens.
 
 ## Status
 

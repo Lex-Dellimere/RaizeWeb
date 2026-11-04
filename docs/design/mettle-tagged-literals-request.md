@@ -17,7 +17,7 @@ fn todos_view(s: Todos*) -> Html {
 }
 ```
 
-LiveView diffing needs the literal kept as statics plus per-hole dynamics,
+Signal diffing (raize's LiveView-style pages) needs the literal kept as statics plus per-hole dynamics,
 with each hole's field dependencies. Today `ir_lower_interpolation` joins it
 into one string.
 

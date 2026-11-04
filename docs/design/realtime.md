@@ -1,10 +1,11 @@
-# Realtime: WebSockets, channels and LiveView for raize
+# Realtime: WebSockets, channels and Signals for raize
 
 Status (2026-11-04): M1-M4 are built and tested (`make integration`); M5-M7
 are the plan. Each milestone below says what was actually built.
 
 raize's goal is Phoenix's model in Mettle: server-rendered HTML, channels
-(topic-based pub/sub over a socket), and LiveView (stateful server views that
+(topic-based pub/sub over a socket), and Signals (`RzSignal`, raize's take on
+Phoenix LiveView: stateful server views that
 push minimal diffs to the browser). Later, a Mettle runtime with BEAM-level
 concurrency will host every channel and view as its own process. This document
 is the order to build it in, and the decisions that keep today's code
@@ -44,12 +45,12 @@ Consequences:
 
 ## 2. Copy Phoenix's wire protocol exactly
 
-Channels and LiveView talk to the browser in Phoenix's own formats:
+Channels and Signals talk to the browser in Phoenix's own formats:
 
 - **Channels:** Phoenix serializer v2. Every message is a JSON array
   `[join_ref, ref, topic, event, payload]`. Events are `phx_join`, `phx_leave`,
   `phx_reply`, `phx_error`, `phx_close` and `heartbeat` on topic `phoenix`.
-- **LiveView:** the "rendered" diff format. Statics go under `"s"`, dynamics
+- **Signals:** LiveView's "rendered" diff format. Statics go under `"s"`, dynamics
   under `"0"`, `"1"`, ...; comprehensions use `"d"`; and each update sends only
   the dynamic slots that changed. Clients send `event` messages carrying
   `{type, event, value}` for `phx-click`, `phx-submit` and similar bindings.
@@ -132,7 +133,7 @@ flat table scanned per broadcast; a topic index replaces it when needed.
 ### M5 Templates v2: statics and dynamics
 
 The current engine (`framework/template`) already compiles a template into
-`TEXT` ops (statics) and `VAR`/`RAW`/`SECTION` ops (dynamics). LiveView needs
+`TEXT` ops (statics) and `VAR`/`RAW`/`SECTION` ops (dynamics). Signals need
 exactly that split, kept at render time:
 
 - Render to an `RzRendered` value: a statics fingerprint and a dynamic slot
@@ -146,9 +147,9 @@ exactly that split, kept at render time:
   investigating, but startup compilation is the baseline because it already
   works.
 
-### M6 LiveView
+### M6 Signals (see `views.md`, which supersedes the API below)
 
-- `RzLive` callbacks, again written as functions over a state pointer:
+- `RzSignal` callbacks, again written as functions over a state pointer:
   `mount(params, session, sock)`, `handle_event(event, value, sock)`,
   `handle_info(msg, sock)` and `render(assigns) -> RzRendered`.
 - **Assigns with change tracking.** `rz_assign(sock, "count", value)` marks
@@ -157,13 +158,13 @@ exactly that split, kept at render time:
 - First request: a normal HTTP GET renders the full HTML with `data-phx-*`
   session attributes. The client then joins `lv:<id>` over the socket, raize
   re-mounts, and from then on sends diffs.
-- Demo: `examples/counter`, then `examples/tasks` rewritten as a LiveView.
+- Demo: `examples/counter`, then `examples/tasks` rewritten as a Signal.
 
 ### M7 The runtime
 
 When the Mettle runtime (BEAM-like processes) arrives:
 
-- Every channel and LiveView becomes a process, and its callbacks become its
+- Every channel and Signal becomes a process, and its callbacks become its
   message handlers. That is why M4 and M6 are callback-over-state today:
   handlers already receive one message at a time and never share state.
 - The hub becomes a scheduler-facing I/O driver, and PubSub becomes process
@@ -171,9 +172,29 @@ When the Mettle runtime (BEAM-like processes) arrives:
 - Reference model: Erlang/OTP sources in
   `../distibuted_mettle/reference_model/otp`.
 
-## 4. Concurrency rules until the runtime exists
+## 4. The event loop is a bridge to the runtime
 
-- One hub thread owns every upgraded socket and every channel and LiveView
+A BEAM/OTP-style runtime for Mettle is being built (with other runtime work
+alongside it). When it lands, it owns scheduling and I/O, and
+`framework/poll` (epoll through `syscall`) and the hub thread go away. So the
+code is layered by what survives:
+
+| Layer | Survives the runtime? |
+|---|---|
+| `framework/ws` (handshake, frames, UTF-8, `RzWsConn`): pure protocol | yes, unchanged |
+| `framework/channel/wire`: the Phoenix v2 format | yes, unchanged |
+| Channel and Signal callbacks (join/handle_in/leave; state + message + update + view) | yes, and they become process message handlers |
+| `framework/hub` (thread, slots, mailbox) | replaced by processes and runtime mailboxes |
+| `framework/poll` (epoll, eventfd, `syscall` numbers) | replaced by runtime I/O |
+
+The rule that keeps the swap cheap: **apps never touch `poll` or the hub's
+internals.** They see an opaque `RzHub*`, `rz_hub_upgrade`, and the channel
+and Signal APIs. Anything new for Signals is built on those, not on epoll.
+Effort on `poll` and `hub` stays minimal: correct and leak-free, not tuned.
+
+## 5. Concurrency rules until the runtime exists
+
+- One hub thread owns every upgraded socket and every channel and Signal
   state. Nothing else touches them. That rule avoids a lock per view and
   matches the process model.
 - Other threads (HTTP workers) talk to the hub only through its queue plus
@@ -184,7 +205,7 @@ When the Mettle runtime (BEAM-like processes) arrives:
 - When one hub thread becomes the bottleneck: N hubs, sockets sharded by fd,
   and PubSub fan-out crossing hubs through their queues.
 
-## 5. Inputs from other projects
+## 6. Inputs from other projects
 
 - **MeoSQL**: "changes visible to clients as they happen" (commit
   notifications) is what would drive live updates from the database, through
