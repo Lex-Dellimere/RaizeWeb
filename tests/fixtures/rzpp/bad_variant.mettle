@@ -7,3 +7,4 @@ fn view(n: int32) -> RzHtml* {
     <button on:click={Stop}>stop</button>
   """;
 }
+// expect: 7: `Stop` is not a variant of a message enum

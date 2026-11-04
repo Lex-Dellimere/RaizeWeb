@@ -2,3 +2,4 @@ fn view(n: int32) -> RzHtml* {
   var h: RzHtml* = html"""<p>{n}</p>""";
   return h;
 }
+// expect: 2: must be returned

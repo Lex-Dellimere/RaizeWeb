@@ -1,0 +1,6 @@
+@resource
+@required(text)
+@max_length(txt, 40)
+@create(text) @read
+struct Note { id: int64; text: string; pinned: bool; }
+// expect: 3: `txt` is not a field of Note — use one of: id, text, pinned

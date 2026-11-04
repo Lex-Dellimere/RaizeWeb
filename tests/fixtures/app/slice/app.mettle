@@ -1,0 +1,33 @@
+// tests/fixtures/app/slice — the P2 draft slice: one resource, one Signal, rz_run.
+// Crosses every risky seam once: decorator stripping with stable lines, comptime
+// field metadata in generated code, offset-based records through a vtable, arena
+// copies, the derived JSON API, @signal by convention, and rz_run deriving the hub,
+// socket and routes. Run from the repository root:  ./build/slice [--port N]
+
+import "raize";
+
+@resource
+@required(text) @max_length(text, 40)
+@create(text) @read @destroy
+@action(pin, note_set_pinned)
+struct Note { id: int64; text: string; pinned: bool; }
+fn note_set_pinned(n: Note*) { n->pinned = true; }
+
+@signal
+struct Counter { n: int32; }
+// Set(int32) makes this a tagged enum: one without payloads is a plain enum, which
+// `match` rejects (DECISIONS.md, Findings P2).
+enum CounterMsg { Inc, Dec, Set(int32) }
+fn counter_update(s: Counter*, msg: CounterMsg) {
+  match (msg) { case Inc: { s->n = s->n + 1; } case Dec: { s->n = s->n - 1; } case Set(v): { s->n = v; } }
+}
+fn counter_view(s: Counter*) -> RzHtml* {
+  return html"""<p>{s->n}</p><button on:click={Inc}>+</button>""";
+}
+
+fn slice_app(app: RzApp*) {
+  rz_default(app, "port", "8075");
+  note_json_api(app, "/api/notes", rz_mem_layer(app, note_resource(), 8));
+  counter_signal(app, "/counter", "");
+}
+fn main() -> int32 { return rz_run("slice", &slice_app); }

@@ -1,0 +1,66 @@
+// tools/rzpp/signal — `@signal` structs, bound by convention to their snake name.
+//
+// `@signal struct Counter` requires `enum CounterMsg`, `fn counter_update(s: Counter*,
+// msg: CounterMsg)` and `fn counter_view(s: Counter*) -> RzHtml*`; `counter_mount` and
+// `counter_leave` are optional. It appends typed wrappers (no fn-type casts):
+//
+//   Counter__mount/__view/__leave(state: rawptr)   call the app's functions
+//   counter_signal(app, path, head)                 mounts the Signal, topic "signal:counter"
+//   counter_publish(topic, m) -> bool               any thread
+//
+// CounterMsg__handle and CounterMsg__publish come from msg.mettle, as before.
+
+import "../../framework/str/str";
+import "src";
+import "decl";
+
+fn rzpp_has_fn(g: RzppGen*, name: string) -> bool {
+  return rz_str_find(g->src, "fn {name}(") >= 0;
+}
+
+fn rzpp_signal_wrapper(g: RzppGen*, out: RzBuf*, T: string, fname: string, what: string) {
+  if (rzpp_has_fn(g, fname)) {
+    rz_buf_add(out, "fn {T}__{what}(state: rawptr) {{\n  {fname}(({T}*)state);\n}\n");
+  } else {
+    rz_buf_add(out, "fn {T}__{what}(state: rawptr) {{\n}\n");
+  }
+}
+
+// Checks one @signal struct and appends its generated code to `out`.
+export fn rzpp_signal(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
+  var T: string = d->name;
+  var s: string = d->snake;
+  var at: int64 = d->decos[0].at;
+  for k in 0..d->n {
+    if (d->decos[k].args->len != 0) { rzpp_fail(g, d->decos[k].at, "@signal takes no arguments — the names come from the struct: {s}_update, {s}_view"); return; }
+  }
+  if (rz_str_find(g->src, "enum {T}Msg ") < 0 && rz_str_find(g->src, "enum {T}Msg{{") < 0) {
+    rzpp_fail(g, at, "@signal {T}: no `enum {T}Msg {{ ... }` in this file — add the messages the page and server send");
+    return;
+  }
+  if (!rzpp_has_fn(g, "{s}_update")) {
+    rzpp_fail(g, at, "@signal {T}: missing `fn {s}_update(s: {T}*, msg: {T}Msg)` — add it");
+    return;
+  }
+  if (!rzpp_has_fn(g, "{s}_view")) {
+    rzpp_fail(g, at, "@signal {T}: missing `fn {s}_view(s: {T}*) -> RzHtml*` — add it");
+    return;
+  }
+  var gen: RzStrList* = rz_str_split("signal publish", 32);
+  for k in 0..gen->len {
+    var nm: string = "{s}_{gen->items[k]}";
+    var decl: int64 = rz_str_find(g->src, "fn {nm}(");
+    if (decl >= 0) { rzpp_fail(g, at, "@signal {T} generates fn {nm}, but line {rzpp_line_of(g->src, decl)} already declares it — rename that function"); }
+  }
+  rz_strlist_free(gen);
+  if (rzpp_failed(g)) { return; }
+  rz_buf_add(out, "\n// ---- @signal {T} ----\n");
+  rzpp_signal_wrapper(g, out, T, "{s}_mount", "mount");
+  rzpp_signal_wrapper(g, out, T, "{s}_leave", "leave");
+  rz_buf_add(out, "fn {T}__view(state: rawptr) -> RzHtml* {{\n  return {s}_view(({T}*)state);\n}\n");
+  rz_buf_add(out, "/// Mounts Signal {T}: its page at `path` (GET), live over /signal/websocket on topic\n/// \"signal:{s}\".\n");
+  rz_buf_add(out, "/// in:      app the app; path the page route, copied; head extra <head> markup, copied\n/// returns: nothing; mistakes are reported by rz_run\n/// owns:    nothing kept from the caller\n/// thread:  the declaration function only\n/// example: -\n");
+  rz_buf_add(out, "fn {s}_signal(app: RzApp*, path: string, head: string) {{\n  rz__app_signal(app, \"{s}\", path, head, (int64)sizeof({T}), &{T}__mount, &{T}Msg__handle, &{T}__view, &{T}__leave);\n}\n");
+  rz_buf_add(out, "/// Delivers `m` to every {T} instance listening on `topic` (\"{s}\" reaches all).\n/// in:      topic the topic; m the message\n/// returns: false when the hub's mailbox is full\n/// owns:    nothing kept\n/// thread:  any\n/// example: -\n");
+  rz_buf_add(out, "fn {s}_publish(topic: string, m: {T}Msg) -> bool {{\n  return {T}Msg__publish(topic, m);\n}\n");
+}

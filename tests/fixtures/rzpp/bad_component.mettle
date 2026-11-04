@@ -7,3 +7,4 @@ fn view(n: int32) -> RzHtml* {
     <.card heading="x" />
   """;
 }
+// expect: 7: card() has no parameter `heading`

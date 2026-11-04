@@ -1,0 +1,251 @@
+// tools/rzpp/resource — `@resource` structs: checks, then the generated code interface.
+//
+// For `@resource @required(text) @max_length(text, 40) @create(text) @read @destroy
+// @action(pin, note_set_pinned) struct Note { id: int64; text: string; pinned: bool; }`
+// it appends (DECISIONS.md D1, D4):
+//
+//   struct NoteList                    the layout of RzRecords, typed
+//   Note__def, Note__layer             the static definition, the JSON API's layer
+//   Note__init_fields                  one `comptime for` over typeof(Note).fields
+//   Note__change_pin                   typed wrapper around the change fn
+//   note_resource()                    builds the definition once
+//   note_create/read/get/count/destroy/pin   the code interface
+//   Note__api_*, note_json_api         the derived JSON API
+//
+// Every diagnostic is "path:line: what — fix", on the decorator's or field's line.
+
+import "std/mem";
+import "../../framework/str/str";
+import "src";
+import "decl";
+
+fn rzpp_field_list(d: RzppDecl*) -> string {
+  var b: RzBuf* = rz_buf_new();
+  for i in 0..d->fnames->len {
+    if (i > 0) { rz_buf_add(b, ", "); }
+    rz_buf_add(b, d->fnames->items[i]);
+  }
+  return rz_buf_take(b);
+}
+
+// Index of field `name`, or -1 after failing with the list of fields.
+fn rzpp_field(g: RzppGen*, d: RzppDecl*, dc: RzppDeco*, name: string) -> int64 {
+  var i: int64 = rzpp_list_index(d->fnames, name);
+  if (i < 0) { rzpp_fail(g, dc->at, "@{dc->name}: `{name}` is not a field of {d->name} — use one of: {rzpp_field_list(d)}"); }
+  return i;
+}
+
+fn rzpp_string_field(g: RzppGen*, d: RzppDecl*, dc: RzppDeco*, name: string) -> int64 {
+  var i: int64 = rzpp_field(g, d, dc, name);
+  if (i >= 0 && !rz_str_eq(d->ftypes->items[i], "string")) {
+    rzpp_fail(g, dc->at, "@{dc->name}({name}): {d->name}.{name} is {d->ftypes->items[i]}, not string — @{dc->name} applies to string fields");
+    return -1;
+  }
+  return i;
+}
+
+fn rzpp_nargs(g: RzppGen*, dc: RzppDeco*, n: int64, shape: string) -> bool {
+  if (dc->args->len != n) { rzpp_fail(g, dc->at, "@{dc->name} takes {n} argument(s) — write {shape}"); return false; }
+  return true;
+}
+
+fn rzpp_is_int(s: string) -> bool {
+  if (s.length == 0) { return false; }
+  for i in 0..s.length {
+    if (!rz_char_is_digit((int32)s.chars[i])) { return false; }
+  }
+  return true;
+}
+
+fn rzpp_is_snake(s: string) -> bool {
+  if (s.length == 0) { return false; }
+  for i in 0..s.length {
+    var c: int32 = (int32)s.chars[i];
+    if (!((c >= 97 && c <= 122) || c == 95 || (i > 0 && rz_char_is_digit(c)))) { return false; }
+  }
+  return true;
+}
+
+// Fails when `fn name(` is already declared in the source (a generated name).
+fn rzpp_free_name(g: RzppGen*, at: int64, name: string, why: string) -> bool {
+  var decl: int64 = rz_str_find(g->src, "fn {name}(");
+  if (decl < 0) { return true; }
+  rzpp_fail(g, at, "{why} generates fn {name}, but line {rzpp_line_of(g->src, decl)} already declares it — rename that function");
+  return false;
+}
+
+fn rzpp_resource_fields(g: RzppGen*, d: RzppDecl*) -> bool {
+  if (d->fnames->len == 0 || !rz_str_eq(d->fnames->items[0], "id") || !rz_str_eq(d->ftypes->items[0], "int64")) {
+    rzpp_fail(g, d->at, "@resource {d->name}: the first field must be `id: int64` (the primary key) — add it first");
+    return false;
+  }
+  for i in 0..d->fnames->len {
+    var t: string = d->ftypes->items[i];
+    if (!(rz_str_eq(t, "int32") || rz_str_eq(t, "int64") || rz_str_eq(t, "bool") || rz_str_eq(t, "string"))) {
+      rzpp_fail(g, d->fat[i], "{d->name}.{d->fnames->items[i]}: type {t} is not supported by @resource — use int32, int64, bool or string");
+      return false;
+    }
+  }
+  return true;
+}
+
+// Emits the statement that records decorator `dc` in note_resource(); false on error.
+fn rzpp_resource_deco(g: RzppGen*, d: RzppDecl*, dc: RzppDeco*, body: RzBuf*, actions: RzStrList*) -> bool {
+  var nm: string = dc->name;
+  var def: string = "&{d->name}__def";
+  if (rz_str_eq(nm, "resource") || rz_str_eq(nm, "read") || rz_str_eq(nm, "destroy")) {
+    if (!rzpp_nargs(g, dc, 0, "@{nm}")) { return false; }
+    if (rz_str_eq(nm, "read")) { rz_buf_add(body, "  rz__action_read({def});\n"); }
+    if (rz_str_eq(nm, "destroy")) { rz_buf_add(body, "  rz__action_destroy({def});\n"); }
+  } else if (rz_str_eq(nm, "required")) {
+    if (!rzpp_nargs(g, dc, 1, "@required(field)")) { return false; }
+    var i: int64 = rzpp_string_field(g, d, dc, dc->args->items[0]);
+    if (i < 0) { return false; }
+    rz_buf_add(body, "  rz__attr_required({def}, {i});\n");
+  } else if (rz_str_eq(nm, "max_length")) {
+    if (!rzpp_nargs(g, dc, 2, "@max_length(field, n)")) { return false; }
+    var j: int64 = rzpp_string_field(g, d, dc, dc->args->items[0]);
+    if (j < 0) { return false; }
+    if (!rzpp_is_int(dc->args->items[1])) { rzpp_fail(g, dc->at, "@max_length: `{dc->args->items[1]}` is not a byte count — write an integer >= 0"); return false; }
+    rz_buf_add(body, "  rz__attr_max_length({def}, {j}, {dc->args->items[1]});\n");
+  } else if (rz_str_eq(nm, "create")) {
+    var mask: int64 = 0;
+    for k in 0..dc->args->len {
+      var f: int64 = rzpp_field(g, d, dc, dc->args->items[k]);
+      if (f < 0) { return false; }
+      if (f == 0) { rzpp_fail(g, dc->at, "@create: `id` is assigned by the data layer — remove it from the list"); return false; }
+      mask = mask | ((int64)1 << f);
+    }
+    rz_buf_add(body, "  rz__action_create({def}, {mask});\n");
+  } else if (rz_str_eq(nm, "action")) {
+    if (!rzpp_nargs(g, dc, 2, "@action(name, change_fn)")) { return false; }
+    var an: string = dc->args->items[0];
+    var cf: string = dc->args->items[1];
+    if (!rzpp_is_snake(an)) { rzpp_fail(g, dc->at, "@action: `{an}` is not a snake_case name — write e.g. @action(mark_done, {cf})"); return false; }
+    if (rzpp_list_index(actions, an) >= 0) { rzpp_fail(g, dc->at, "@action({an}, ...) is declared twice on {d->name} — keep one"); return false; }
+    rz_strlist_push(actions, an);
+    var sig: int64 = rz_str_find(g->src, "fn {cf}(");
+    var typed: bool = sig >= 0;
+    if (typed) {
+      var close: int64 = rz_str_find_byte_from(g->src, 41, sig);
+      typed = close > sig && rz_str_contains(rz_str_sub(g->src, sig, close), "{d->name}*");
+    }
+    if (!typed) {
+      rzpp_fail(g, dc->at, "@action({an}, {cf}): no `fn {cf}(r: {d->name}*)` in this file — add it; it edits fields of r and calls nothing in raize");
+      return false;
+    }
+    if (!rzpp_free_name(g, dc->at, "{d->snake}_{an}", "@action({an}, {cf})")) { return false; }
+    rz_buf_add(body, "  rz__action_custom({def}, \"{an}\", &{d->name}__change_{an});\n");
+  } else {
+    rzpp_fail(g, dc->at, "@{nm} is not supported yet in this build of rzpp — use @create, @read, @destroy or @action");
+    return false;
+  }
+  return true;
+}
+
+fn rzpp_doc(out: RzBuf*, summary: string, in_: string, returns: string) {
+  rz_buf_add(out, "/// {summary}\n/// in:      {in_}\n/// returns: {returns}\n");
+  rz_buf_add(out, "/// owns:    strings are borrowed; the data layer copies what it keeps\n/// thread:  any (the data layer locks)\n/// example: -\n");
+}
+
+fn rzpp_emit_interface(d: RzppDecl*, out: RzBuf*) {
+  var T: string = d->name;
+  var s: string = d->snake;
+  for k in 0..d->n {
+    var dc: RzppDeco* = &d->decos[k];
+    if (rz_str_eq(dc->name, "create")) {
+      var params: RzBuf* = rz_buf_new();
+      var sets: RzBuf* = rz_buf_new();
+      for a in 0..dc->args->len {
+        var f: string = dc->args->items[a];
+        var t: string = d->ftypes->items[rzpp_list_index(d->fnames, f)];
+        rz_buf_add(params, ", {f}: {t}");
+        rz_buf_add(sets, "  rec.{f} = {f};\n");
+      }
+      rzpp_doc(out, "Creates a {T} from the accepted fields (strings trimmed, then validated).", "dl the layer; the accepted fields; id receives the new id (may be 0); errs may be 0", "RZ_OK, RZ_E_INVALID (see errs), RZ_E_FULL, RZ_E_NOMEM, RZ_E_USAGE");
+      rz_buf_add(out, "fn {s}_create(dl: RzDataLayer*{rz_buf_str(params)}, id: int64*, errs: RzErrors*) -> int32 {{\n  var rec: {T};\n  memset((rawptr)&rec, 0, (int64)sizeof({T}));\n{rz_buf_str(sets)}  return rz__create(dl, {s}_resource(), (rawptr)&rec, id, errs);\n}\n");
+      rz_buf_free(params);
+      rz_buf_free(sets);
+    } else if (rz_str_eq(dc->name, "read")) {
+      rzpp_doc(out, "Every {T}, in id order, copied into `arena`.", "dl the layer; arena holds the records and their strings", "the list (count 0 on error)");
+      rz_buf_add(out, "fn {s}_read(dl: RzDataLayer*, arena: RzArena*) -> {T}List {{\n  var recs: RzRecords;\n  rz__read(dl, {s}_resource(), &recs, arena);\n  var list: {T}List;\n  list.items = ({T}*)recs.items;\n  list.count = recs.count;\n  return list;\n}\n");
+      rzpp_doc(out, "One {T} by id, copied into `out` (strings in `arena`).", "dl the layer; id; out receives the record; arena", "RZ_OK, RZ_E_NOT_FOUND, RZ_E_NOMEM, RZ_E_USAGE");
+      rz_buf_add(out, "fn {s}_get(dl: RzDataLayer*, id: int64, out: {T}*, arena: RzArena*) -> int32 {{\n  return rz__get(dl, {s}_resource(), id, (rawptr)out, arena);\n}\n");
+      rzpp_doc(out, "Number of {T} records stored.", "dl the layer", "the count (0 on misuse)");
+      rz_buf_add(out, "fn {s}_count(dl: RzDataLayer*) -> int32 {{\n  return rz__count(dl, {s}_resource());\n}\n");
+    } else if (rz_str_eq(dc->name, "destroy")) {
+      rzpp_doc(out, "Removes the {T} with this id.", "dl the layer; id; errs may be 0", "RZ_OK, RZ_E_NOT_FOUND, RZ_E_USAGE");
+      rz_buf_add(out, "fn {s}_destroy(dl: RzDataLayer*, id: int64, errs: RzErrors*) -> int32 {{\n  return rz__destroy(dl, {s}_resource(), id, errs);\n}\n");
+    } else if (rz_str_eq(dc->name, "action")) {
+      var an: string = dc->args->items[0];
+      var cf: string = dc->args->items[1];
+      rz_buf_add(out, "fn {T}__change_{an}(rec: rawptr) {{\n  {cf}(({T}*)rec);\n}\n");
+      rzpp_doc(out, "Runs action {an}: loads the {T}, applies {cf}, validates, stores (atomically).", "dl the layer; id; errs may be 0", "RZ_OK, RZ_E_NOT_FOUND, RZ_E_INVALID (see errs), RZ_E_USAGE");
+      rz_buf_add(out, "fn {s}_{an}(dl: RzDataLayer*, id: int64, errs: RzErrors*) -> int32 {{\n  return rz__action(dl, {s}_resource(), \"{an}\", id, errs, (rawptr)0, (RzArena*)0);\n}\n");
+    }
+  }
+}
+
+fn rzpp_api_route(out: RzBuf*, routes: RzBuf*, T: string, what: string, call: string, verb: string, suffix: string) {
+  rz_buf_add(out, "fn {T}__api_{what}(ctx: RzContext*) -> int32 {{\n  return {call};\n}\n");
+  rz_buf_add(routes, "  rz__app_route(app, \"{verb}\", base, \"{suffix}\", &{T}__api_{what});\n");
+}
+
+fn rzpp_emit_api(d: RzppDecl*, out: RzBuf*) {
+  var T: string = d->name;
+  var s: string = d->snake;
+  var routes: RzBuf* = rz_buf_new();
+  for k in 0..d->n {
+    var nm: string = d->decos[k].name;
+    if (rz_str_eq(nm, "read")) {
+      rzpp_api_route(out, routes, T, "list", "rz__api_list(ctx, {T}__layer)", "GET", "");
+      rzpp_api_route(out, routes, T, "get", "rz__api_get(ctx, {T}__layer)", "GET", "/:id");
+    } else if (rz_str_eq(nm, "create")) {
+      rzpp_api_route(out, routes, T, "create", "rz__api_create(ctx, {T}__layer)", "POST", "");
+    } else if (rz_str_eq(nm, "destroy")) {
+      rzpp_api_route(out, routes, T, "destroy", "rz__api_destroy(ctx, {T}__layer)", "DELETE", "/:id");
+    } else if (rz_str_eq(nm, "action")) {
+      var an: string = d->decos[k].args->items[0];
+      rzpp_api_route(out, routes, T, an, "rz__api_action(ctx, {T}__layer, \"{an}\")", "POST", "/:id/{an}");
+    }
+  }
+  rz_buf_add(out, "/// Mounts the JSON API of {T} under `base` (GET/POST base, GET/DELETE base/:id,\n/// POST base/:id/<action>), backed by `dl`. Once per resource.\n");
+  rz_buf_add(out, "/// in:      app the app; base the prefix (\"/api/{s}s\"), copied; dl the layer\n/// returns: nothing; mistakes are reported by rz_run\n/// owns:    the app does not take `dl` (rz_mem_layer layers are app-owned already)\n/// thread:  the declaration function only\n/// example: -\n");
+  rz_buf_add(out, "fn {s}_json_api(app: RzApp*, base: string, dl: RzDataLayer*) {{\n  if (rz__app_api(app, base, dl, {s}_resource()) != RZ_OK) {{ return; }\n  {T}__layer = dl;\n");
+  rz_buf_add(out, rz_buf_str(routes));
+  rz_buf_add(out, "}\n");
+  rz_buf_free(routes);
+}
+
+// Checks one @resource struct and appends its generated code to `out`.
+export fn rzpp_resource(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
+  if (!rzpp_resource_fields(g, d)) { return; }
+  var body: RzBuf* = rz_buf_new();
+  var actions: RzStrList* = rz_strlist_new();
+  var nact: int32 = 0;
+  for k in 0..d->n {
+    var dc: RzppDeco* = &d->decos[k];
+    if (!rzpp_resource_deco(g, d, dc, body, actions)) { return; }
+    var nm: string = dc->name;
+    if (rz_str_eq(nm, "create") || rz_str_eq(nm, "read") || rz_str_eq(nm, "destroy") || rz_str_eq(nm, "action") || rz_str_eq(nm, "update")) { nact = nact + 1; }
+  }
+  if (nact == 0) { rzpp_fail(g, d->decos[0].at, "@resource {d->name} declares no action — add @create(fields), @read, @destroy or @action(name, fn)"); return; }
+  var T: string = d->name;
+  var s: string = d->snake;
+  var gen: RzStrList* = rz_str_split("resource json_api create read get count destroy", 32);
+  for k in 0..gen->len {
+    if (!rzpp_failed(g)) { rzpp_free_name(g, d->decos[0].at, "{s}_{gen->items[k]}", "@resource {T}"); }
+  }
+  rz_strlist_free(gen);
+  if (rzpp_failed(g)) { return; }
+  rz_buf_add(out, "\n// ---- @resource {T} ----\n/// A list of {T} records returned by {s}_read; items live in the arena passed to it.\n");
+  rz_buf_add(out, "struct {T}List {{\n  items: {T}*;   // count records; arena-owned\n  count: int32;  // number of records\n}\n");
+  rz_buf_add(out, "var {T}__def: RzResourceDef;\nvar {T}__layer: RzDataLayer* = 0;\n");
+  rz_buf_add(out, "fn {T}__init_fields(def: RzResourceDef*) {{\n  comptime for f in typeof({T}).fields {{\n    rz__resource_field(def, f.name, f.type.kind, (int64)f.offset, (int64)f.type.size);\n  }\n}\n");
+  rz_buf_add(out, "/// The definition of resource {T}: fields, validations, actions. Built on the first\n/// call (during declaration), static afterwards.\n/// in:      nothing\n/// returns: the static definition\n/// owns:    nothing; never free it\n/// thread:  first call on the main thread; any thread afterwards\n/// example: -\n");
+  rz_buf_add(out, "fn {s}_resource() -> RzResourceDef* {{\n  if (rz__resource_ready(&{T}__def)) {{ return &{T}__def; }\n  rz__resource_begin(&{T}__def, \"{s}\", \"{T}\", (int64)sizeof({T}));\n  {T}__init_fields(&{T}__def);\n{rz_buf_str(body)}  rz__resource_end(&{T}__def);\n  return &{T}__def;\n}\n");
+  rzpp_emit_interface(d, out);
+  rzpp_emit_api(d, out);
+  rz_buf_free(body);
+  rz_strlist_free(actions);
+}

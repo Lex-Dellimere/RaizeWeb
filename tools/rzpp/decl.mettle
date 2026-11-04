@@ -1,0 +1,30 @@
+// tools/rzpp/decl — a decorated struct as deco.mettle parsed it, for the generators.
+
+import "../../framework/str/str";
+
+export struct RzppDeco {
+  name: string;        // "max_length"; a view into the source
+  args: RzStrList*;    // trimmed argument views; owned list
+  at: int64;           // offset of the `@`
+}
+
+export struct RzppDecl {
+  decos: RzppDeco[32];     // in source order
+  n: int32;                // decorators in the group
+  name: string;            // the struct name ("Note"); a view
+  snake: string;           // "note"; owned
+  at: int64;               // offset of `struct`
+  exported: bool;          // `export struct`
+  fnames: RzStrList*;      // field names, in order; views
+  ftypes: RzStrList*;      // field types, in order; views
+  fat: int64[32];          // offset of each field
+  bad_at: int64;           // first offset on a decorator line that is not a decorator, or -1
+}
+
+export fn rzpp_decl_has(d: RzppDecl*, name: string) -> bool {
+  for i in 0..d->n {
+    if (rz_str_eq(d->decos[i].name, name)) { return true; }
+  }
+  return false;
+}
+

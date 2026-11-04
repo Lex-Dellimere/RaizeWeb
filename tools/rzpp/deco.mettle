@@ -1,0 +1,234 @@
+// tools/rzpp/deco — rz decorators: find them, check their spelling, strip them, and
+// hand each decorated struct to its generator (resource.mettle, signal.mettle).
+//
+// A decorator group is a run of lines whose first non-space character is `@`, directly
+// above a `struct` (or `export struct`). A group is ours when it holds an rz decorator;
+// other groups (`@test`, `@noinline`, layout decorators) are left alone. Arguments are
+// identifiers and integers only: `@max_length(title, 120)`, `@action(toggle, task_flip)`.
+//
+// Stripping overwrites each decorator with spaces, so every byte keeps its offset and
+// every line its number: diagnostics and compiler errors point at the real source.
+
+import "std/mem";
+import "../../framework/str/str";
+import "src";
+import "decl";
+import "resource";
+import "signal";
+
+const RZPP_DECOS: string = "resource signal required min_length max_length create read update destroy action";
+
+fn rzpp_is_rz_deco(name: string) -> bool {
+  var known: RzStrList* = rz_str_split(RZPP_DECOS, 32);
+  var ok: bool = rzpp_list_index(known, name) >= 0;
+  rz_strlist_free(known);
+  return ok;
+}
+
+fn rzpp_min3(a: int32, b: int32, c: int32) -> int32 {
+  var m: int32 = a;
+  if (b < m) { m = b; }
+  if (c < m) { m = c; }
+  return m;
+}
+
+// Edit distance between two short names (decorator names are < 32 bytes).
+fn rzpp_distance(a: string, b: string) -> int32 {
+  var row: int32[33];
+  var n: int64 = (int64)b.length;
+  if (a.length > 32 || n > 32) { return 99; }
+  for j in 0..n + 1 { row[j] = (int32)j; }
+  for i in 1..(int64)a.length + 1 {
+    var diag: int32 = row[0];
+    row[0] = (int32)i;
+    for j in 1..n + 1 {
+      var keep: int32 = row[j];
+      var cost: int32 = 1;
+      if (a.chars[i - 1] == b.chars[j - 1]) { cost = 0; }
+      row[j] = rzpp_min3(row[j] + 1, row[j - 1] + 1, diag + cost);
+      diag = keep;
+    }
+  }
+  return row[n];
+}
+
+// The rz decorator spelled most like `name`.
+fn rzpp_closest(name: string) -> string {
+  var known: RzStrList* = rz_str_split(RZPP_DECOS, 32);
+  var best: string = known->items[0];
+  var bd: int32 = 99;
+  for i in 0..known->len {
+    var d: int32 = rzpp_distance(name, known->items[i]);
+    if (d < bd) { bd = d; best = known->items[i]; }
+  }
+  rz_strlist_free(known);
+  return best;
+}
+
+export fn rzpp_snake(name: string) -> string {
+  var b: RzBuf* = rz_buf_new();
+  for i in 0..name.length {
+    var c: int32 = (int32)name.chars[i];
+    if (c >= 65 && c <= 90) {
+      if (i > 0) { rz_buf_add_byte(b, 95); }
+      rz_buf_add_byte(b, c + 32);
+    } else {
+      rz_buf_add_byte(b, c);
+    }
+  }
+  return rz_buf_take(b);
+}
+
+fn rzpp_skip_blank(src: string, i: int64) -> int64 {
+  var k: int64 = i;
+  while (k < (int64)src.length && (src.chars[k] == 32 || src.chars[k] == 9)) { k = k + 1; }
+  return k;
+}
+
+fn rzpp_line_end(src: string, i: int64) -> int64 {
+  var e: int64 = rz_str_find_byte_from(src, 10, i);
+  if (e < 0) { return (int64)src.length; }
+  return e;
+}
+
+// Parses the decorators on one line, from `at` (an `@`) to `end`. Anything else on
+// the line (code after `@test`, a malformed decorator) stops the parse and is noted in
+// d->bad_at: an error only when the group turns out to be ours.
+fn rzpp_parse_line(g: RzppGen*, d: RzppDecl*, at: int64, end: int64) {
+  var src: string = g->src;
+  var i: int64 = at;
+  while (i < end) {
+    i = rzpp_skip_blank(src, i);
+    if (i >= end) { break; }
+    if (src.chars[i] == 47 && i + 1 < end && src.chars[i + 1] == 47) { break; }   // trailing //
+    if (src.chars[i] != 64 || d->n >= 32) { if (d->bad_at < 0) { d->bad_at = i; } return; }
+    var ns: int64 = i + 1;
+    var k: int64 = ns;
+    while (k < end && rzpp_ident_char((int32)src.chars[k])) { k = k + 1; }
+    var dc: RzppDeco* = &d->decos[d->n];
+    dc->name = rz_str_sub(src, ns, k);
+    dc->args = rz_strlist_new();
+    dc->at = i;
+    d->n = d->n + 1;
+    if (k < end && src.chars[k] == 40) {
+      var close: int64 = rz_str_find_byte_from(src, 41, k);
+      if (close < 0 || close > end) { if (d->bad_at < 0) { d->bad_at = i; } return; }
+      var parts: RzStrList* = rz_str_split(rz_str_sub(src, k + 1, close), 44);
+      for p in 0..parts->len {
+        var a: string = rzpp_trim(parts->items[p]);
+        if (a.length > 0 || parts->len > 1) { rz_strlist_push(dc->args, a); }
+      }
+      rz_strlist_free(parts);
+      k = close + 1;
+    }
+    i = k;
+  }
+}
+
+// Fields of the struct whose `{` is at `open`: "name: type" pieces split on `;` and
+// newlines, comments skipped.
+fn rzpp_parse_fields(g: RzppGen*, d: RzppDecl*, open: int64) -> bool {
+  var src: string = g->src;
+  var close: int64 = rzpp_match_brace(src, open);
+  if (close < 0) { rzpp_fail(g, d->at, "struct {d->name} is never closed"); return false; }
+  var i: int64 = open + 1;
+  while (i < close) {
+    var e: int64 = i;
+    while (e < close && src.chars[e] != 59 && src.chars[e] != 10 && !(src.chars[e] == 47 && src.chars[e + 1] == 47)) { e = e + 1; }
+    var piece: string = rzpp_trim(rz_str_sub(src, i, e));
+    if (piece.length > 0) {
+      var colon: int64 = rz_str_find_byte(piece, 58);
+      if (colon <= 0) { rzpp_fail(g, i, "struct {d->name}: expected `name: type;`"); return false; }
+      if (d->fnames->len >= 32) { rzpp_fail(g, i, "struct {d->name}: more than 32 fields"); return false; }
+      d->fat[d->fnames->len] = i + rz_str_find(rz_str_sub(src, i, e), piece);
+      rz_strlist_push(d->fnames, rzpp_trim(rz_str_sub(piece, 0, colon)));
+      rz_strlist_push(d->ftypes, rzpp_trim(rz_str_from(piece, colon + 1)));
+    }
+    if (e < close && src.chars[e] == 47) { e = rzpp_line_end(src, e); }
+    i = e + 1;
+  }
+  return true;
+}
+
+// The struct after a decorator group ending at `from`.
+fn rzpp_parse_struct(g: RzppGen*, d: RzppDecl*, from: int64) -> bool {
+  var src: string = g->src;
+  var i: int64 = from;
+  while (i < (int64)src.length && rz_char_is_space((int32)src.chars[i])) { i = i + 1; }
+  if (rz_str_starts(rz_str_from(src, i), "export ")) { d->exported = true; i = rzpp_skip_blank(src, i + 7); }
+  if (!rz_str_starts(rz_str_from(src, i), "struct ")) {
+    rzpp_fail(g, d->decos[0].at, "@{d->decos[0].name} must be directly above a struct — move it onto the struct it describes");
+    return false;
+  }
+  d->at = i;
+  var ns: int64 = rzpp_skip_blank(src, i + 7);
+  var k: int64 = ns;
+  while (k < (int64)src.length && rzpp_ident_char((int32)src.chars[k])) { k = k + 1; }
+  d->name = rz_str_sub(src, ns, k);
+  d->snake = rzpp_snake(d->name);
+  var open: int64 = rz_str_find_byte_from(src, 123, k);
+  if (open < 0) { rzpp_fail(g, i, "struct {d->name} has no body"); return false; }
+  return rzpp_parse_fields(g, d, open);
+}
+
+// Checks the group's spelling, then dispatches to its generator.
+fn rzpp_decl_run(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
+  for i in 0..d->n {
+    var nm: string = d->decos[i].name;
+    if (!rzpp_is_rz_deco(nm)) {
+      rzpp_fail(g, d->decos[i].at, "unknown decorator @{nm} — did you mean @{rzpp_closest(nm)}?");
+      return;
+    }
+  }
+  var res: bool = rzpp_decl_has(d, "resource");
+  var sig: bool = rzpp_decl_has(d, "signal");
+  if (res && sig) { rzpp_fail(g, d->decos[0].at, "struct {d->name} is both @resource and @signal — keep the data in a resource and put a layer in the Signal's state"); return; }
+  if (!res && !sig) { rzpp_fail(g, d->decos[0].at, "@{d->decos[0].name} needs @resource on the same struct — add @resource above it"); return; }
+  if (res) { rzpp_resource(g, d, out); } else { rzpp_signal(g, d, out); }
+}
+
+// Finds every rz decorator group in g->src, strips it, and appends the generated code
+// to `out`. Replaces g->src with the stripped copy (same length, same lines).
+export fn rzpp_decorators(g: RzppGen*, out: RzBuf*) {
+  var stripped: string = rz_str_dup(g->src);
+  var w: uint8* = stripped.chars;
+  var i: int64 = 0;
+  var len: int64 = (int64)g->src.length;
+  while (i < len && !rzpp_failed(g)) {
+    var p: int64 = rzpp_skip_blank(g->src, i);
+    if (p < len && g->src.chars[p] == 64) {
+      var d: RzppDecl* = (RzppDecl*)calloc(1, sizeof(RzppDecl));
+      d->fnames = rz_strlist_new();
+      d->ftypes = rz_strlist_new();
+      d->bad_at = -1;
+      var ls: int64 = i;
+      while (d->bad_at < 0 && p < len && g->src.chars[p] == 64) {
+        var e: int64 = rzpp_line_end(g->src, p);
+        rzpp_parse_line(g, d, p, e);
+        ls = e + 1;
+        p = rzpp_skip_blank(g->src, ls);
+      }
+      var ours: bool = false;
+      for k in 0..d->n {
+        if (rzpp_is_rz_deco(d->decos[k].name)) { ours = true; }
+      }
+      if (ours && d->bad_at >= 0) {
+        rzpp_fail(g, d->bad_at, "expected `@name` or `@name(args)` on a decorator line — put the struct on its own line below the decorators");
+      } else if (ours) {
+        for k in i..ls - 1 {
+          if (g->src.chars[k] != 10) { w[k] = 32; }
+        }
+        if (rzpp_parse_struct(g, d, ls)) { rzpp_decl_run(g, d, out); }
+      }
+      for k in 0..d->n { rz_strlist_free(d->decos[k].args); }
+      rz_strlist_free(d->fnames);
+      rz_strlist_free(d->ftypes);
+      rz_str_free(d->snake);
+      free((rawptr)d);
+      i = ls;
+    } else {
+      i = rzpp_line_end(g->src, i) + 1;
+    }
+  }
+  g->src = stripped;
+}

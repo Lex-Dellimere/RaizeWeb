@@ -3,3 +3,4 @@ fn view(n: int32) -> RzHtml* {
     <p>{n</p>
   """;
 }
+// expect: 3: unclosed

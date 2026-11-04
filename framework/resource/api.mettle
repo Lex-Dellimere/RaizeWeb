@@ -1,0 +1,194 @@
+// raize/resource/api — the JSON API derived from a resource (D4's route table).
+// internal
+// thread: handlers run on worker threads; the data layer serializes record access.
+//
+//   GET    <base>             200 [records]
+//   GET    <base>/:id         200 record · 400 {"error":"bad id"} · 404 {"error":"not found"}
+//   POST   <base>             201 record · 400 invalid / not an object · 409 {"error":"full"}
+//   POST   <base>/:id/<name>  200 record · 400 · 404
+//   DELETE <base>/:id         204 · 404
+//
+// Keys come in struct order; unknown body keys are ignored. Everything a handler
+// builds lives in the request arena.
+
+import "../str/str";
+import "../core/status";
+import "../context/context";
+import "def";
+import "errors";
+import "layer";
+import "action";
+
+/// internal: resource/api, generated code. Appends `rec` as a JSON object, keys in
+/// struct order.
+/// in:      b the buffer; def the resource; rec the record
+/// returns: nothing
+/// owns:    nothing
+export fn rz__record_json(b: RzBuf*, def: RzResourceDef*, rec: rawptr) {
+  rz_buf_add_byte(b, 123);
+  for i in 0..def->nfields {
+    var f: RzField* = &def->fields[i];
+    if (i > 0) { rz_buf_add_byte(b, 44); }
+    rz_buf_add_byte(b, 34);
+    rz_buf_add(b, f->name);
+    rz_buf_add(b, "\":");
+    if (f->kind == RZ_KIND_STRING) {
+      rz_buf_add_byte(b, 34);
+      rz_json_escape_into(b, rz_field_get_str(rec, f));
+      rz_buf_add_byte(b, 34);
+    } else if (f->kind == RZ_KIND_BOOL) {
+      if (rz_field_get_bool(rec, f)) { rz_buf_add(b, "true"); } else { rz_buf_add(b, "false"); }
+    } else {
+      rz_buf_add_int(b, rz_field_get_int(rec, f));
+    }
+  }
+  rz_buf_add_byte(b, 125);
+}
+
+fn rz__api_send(ctx: RzContext*, status: int32, b: RzBuf*) -> int32 {
+  var st: int32 = rz_ctx_json(ctx, status, rz_buf_str(b));
+  rz_buf_free(b);
+  return st;
+}
+
+fn rz__api_record(ctx: RzContext*, status: int32, def: RzResourceDef*, rec: rawptr) -> int32 {
+  var b: RzBuf* = rz_buf_new();
+  rz__record_json(b, def, rec);
+  return rz__api_send(ctx, status, b);
+}
+
+fn rz__api_error(ctx: RzContext*, rc: int32, errs: RzErrors*) -> int32 {
+  if (rc == RZ_E_NOT_FOUND) { return rz_ctx_json(ctx, 404, "{{\"error\":\"not found\"}"); }
+  if (rc == RZ_E_FULL) { return rz_ctx_json(ctx, 409, "{{\"error\":\"full\"}"); }
+  if (rc != RZ_E_INVALID) { return rz_ctx_json(ctx, 500, "{{\"error\":\"internal\"}"); }
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "{{\"error\":\"invalid\",\"fields\":{{");
+  for i in 0..errs->count {
+    if (i > 0) { rz_buf_add_byte(b, 44); }
+    rz_buf_add_byte(b, 34);
+    rz_buf_add(b, errs->items[i].field);
+    rz_buf_add(b, "\":\"");
+    rz_json_escape_into(b, rz_str_view(&errs->items[i].text[0], (int64)errs->items[i].len));
+    rz_buf_add_byte(b, 34);
+  }
+  rz_buf_add_byte(b, 125);
+  rz_buf_add_byte(b, 125);
+  return rz__api_send(ctx, 400, b);
+}
+
+// The :id parameter: digits only, > 0. Writes it to *id or returns false.
+fn rz__api_id(ctx: RzContext*, id: int64*) -> bool {
+  var s: string = rz_req_param(ctx->req, "id");
+  if (s.length == 0 || s.length > 18) { return false; }
+  for i in 0..s.length {
+    if (!rz_char_is_digit((int32)s.chars[i])) { return false; }
+  }
+  *id = rz_str_to_int(s);
+  return *id > 0;
+}
+
+fn rz__api_bad_id(ctx: RzContext*) -> int32 {
+  return rz_ctx_json(ctx, 400, "{{\"error\":\"bad id\"}");
+}
+
+fn rz__api_rec(ctx: RzContext*, def: RzResourceDef*) -> rawptr {
+  return (rawptr)rz_arena_alloc_zeroed(ctx->arena, def->size);
+}
+
+/// internal: generated <Type>__api_list. GET <base>: every record as a JSON array.
+/// in:      ctx the request; dl the mounted layer
+/// returns: the HTTP status set (200, or 500 when the arena is exhausted)
+/// owns:    nothing
+export fn rz__api_list(ctx: RzContext*, dl: RzDataLayer*) -> int32 {
+  var recs: RzRecords;
+  var rc: int32 = rz__read(dl, dl->def, &recs, ctx->arena);
+  if (rc != RZ_OK) { return rz__api_error(ctx, rc, 0); }
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add_byte(b, 91);
+  for i in 0..recs.count {
+    if (i > 0) { rz_buf_add_byte(b, 44); }
+    rz__record_json(b, dl->def, (rawptr)((uint8*)recs.items + (int64)i * dl->def->size));
+  }
+  rz_buf_add_byte(b, 93);
+  return rz__api_send(ctx, 200, b);
+}
+
+/// internal: generated <Type>__api_get. GET <base>/:id.
+/// in:      ctx the request; dl the mounted layer
+/// returns: the HTTP status set: 200, 400 bad id, 404
+/// owns:    nothing
+export fn rz__api_get(ctx: RzContext*, dl: RzDataLayer*) -> int32 {
+  var id: int64 = 0;
+  if (!rz__api_id(ctx, &id)) { return rz__api_bad_id(ctx); }
+  var rec: rawptr = rz__api_rec(ctx, dl->def);
+  if (rec == 0) { return rz__api_error(ctx, RZ_E_NOMEM, 0); }
+  var rc: int32 = rz__get(dl, dl->def, id, rec, ctx->arena);
+  if (rc != RZ_OK) { return rz__api_error(ctx, rc, 0); }
+  return rz__api_record(ctx, 200, dl->def, rec);
+}
+
+// Reads every accepted field present in the JSON object `body` into `rec`.
+fn rz__api_decode(ctx: RzContext*, def: RzResourceDef*, accept: int64, body: string, rec: rawptr) {
+  for i in 0..def->nfields {
+    var f: RzField* = &def->fields[i];
+    if ((accept & ((int64)1 << i)) != 0) {
+      if (f->kind == RZ_KIND_STRING) {
+        var s: string = rz_str_empty();
+        if (rz_json_get_str(body, f->name, &s, ctx->arena)) { rz_field_set_str(rec, f, s); }
+      } else if (f->kind == RZ_KIND_BOOL) {
+        var v: bool = false;
+        if (rz_json_get_bool(body, f->name, &v)) { rz_field_set_bool(rec, f, v); }
+      } else {
+        var n: int64 = 0;
+        if (rz_json_get_int(body, f->name, &n)) { rz_field_set_int(rec, f, n); }
+      }
+    }
+  }
+}
+
+/// internal: generated <Type>__api_create. POST <base> with a JSON object body.
+/// in:      ctx the request; dl the mounted layer
+/// returns: the HTTP status set: 201, 400 invalid or not an object, 409 full
+/// owns:    nothing
+export fn rz__api_create(ctx: RzContext*, dl: RzDataLayer*) -> int32 {
+  var def: RzResourceDef* = dl->def;
+  var body: string = rz_str_trim(ctx->req->body);
+  if (body.length < 2 || body.chars[0] != 123) {
+    return rz_ctx_json(ctx, 400, "{{\"error\":\"body is not a JSON object\"}");
+  }
+  var a: int32 = rz__resource_action(def, RZ__ACTION_CREATE, "");
+  var rec: rawptr = rz__api_rec(ctx, def);
+  if (a < 0 || rec == 0) { return rz__api_error(ctx, RZ_E_USAGE, 0); }
+  rz__api_decode(ctx, def, def->actions[a].accept, body, rec);
+  var errs: RzErrors;
+  var rc: int32 = rz__create(dl, def, rec, 0, &errs);
+  if (rc != RZ_OK) { return rz__api_error(ctx, rc, &errs); }
+  return rz__api_record(ctx, 201, def, rec);
+}
+
+/// internal: generated <Type>__api_destroy. DELETE <base>/:id.
+/// in:      ctx the request; dl the mounted layer
+/// returns: the HTTP status set: 204, 400 bad id, 404
+/// owns:    nothing
+export fn rz__api_destroy(ctx: RzContext*, dl: RzDataLayer*) -> int32 {
+  var id: int64 = 0;
+  if (!rz__api_id(ctx, &id)) { return rz__api_bad_id(ctx); }
+  var rc: int32 = rz__destroy(dl, dl->def, id, 0);
+  if (rc != RZ_OK) { return rz__api_error(ctx, rc, 0); }
+  return rz_ctx_empty(ctx, 204);
+}
+
+/// internal: generated <Type>__api_<action>. POST <base>/:id/<name>.
+/// in:      ctx the request; dl the mounted layer; name the custom action
+/// returns: the HTTP status set: 200 record, 400 bad id or invalid, 404
+/// owns:    nothing
+export fn rz__api_action(ctx: RzContext*, dl: RzDataLayer*, name: string) -> int32 {
+  var id: int64 = 0;
+  if (!rz__api_id(ctx, &id)) { return rz__api_bad_id(ctx); }
+  var rec: rawptr = rz__api_rec(ctx, dl->def);
+  if (rec == 0) { return rz__api_error(ctx, RZ_E_NOMEM, 0); }
+  var errs: RzErrors;
+  var rc: int32 = rz__action(dl, dl->def, name, id, &errs, rec, ctx->arena);
+  if (rc != RZ_OK) { return rz__api_error(ctx, rc, &errs); }
+  return rz__api_record(ctx, 200, dl->def, rec);
+}

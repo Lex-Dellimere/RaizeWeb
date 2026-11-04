@@ -10,6 +10,8 @@
 //     by as many newlines as the literal spanned, so every line after it
 //     keeps its number and compiler errors point at the real source line
 //   * every enum whose name ends in Msg gets NameMsg__put / NameMsg__decode
+//   * rz decorators (@resource and its attribute/action decorators, @signal) are
+//     blanked out in place and their structs get generated code (deco.mettle)
 //   * the statics arrays and generated functions are appended at the end
 //
 // Exit status 0 on success, 1 with "path:line: message" on stderr.
@@ -20,6 +22,7 @@ import "../../framework/str/str";
 import "src";
 import "gen";
 import "msg";
+import "deco";
 
 fn rzpp_read(path: string) -> string {
   var fp: cstring = fopen(rz_str_c(path), "rb");
@@ -81,9 +84,10 @@ export fn rzpp_literal(g: RzppGen*, a: int64, b: int64, out: RzBuf*) {
 
 // Runs the whole file. Returns the generated source, or empty with g->err set.
 export fn rzpp_file(g: RzppGen*) -> string {
+  var tail: RzBuf* = rz_buf_new();
+  rzpp_decorators(g, tail);     // strips rz decorators from g->src (same lines)
   var src: string = g->src;
   var out: RzBuf* = rz_buf_new_cap((int64)src.length * 2);
-  var tail: RzBuf* = rz_buf_new();
   rzpp_messages(g, tail);
   var copied: int64 = 0;
   var at: int64 = rz_str_find(src, "html\"\"\"");
