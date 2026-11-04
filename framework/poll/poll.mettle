@@ -3,7 +3,7 @@
 // RzPoll owns an epoll instance and an eventfd "waker". The loop thread calls
 // rz_poll_wait and walks the returned events; any other thread calls
 // rz_poll_post to hand it a message, which wakes the loop. That is the whole
-// threading contract (docs/design/realtime.md §4): fds and per-connection
+// threading contract (docs/design/realtime.md §5): fds and per-connection
 // state belong to the loop thread, everyone else talks through the mailbox.
 //
 // Tags: every registered fd carries a caller-chosen int64 tag, returned with

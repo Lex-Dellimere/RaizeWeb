@@ -18,7 +18,7 @@
 //                                       ctx->state here.
 //
 // Every callback runs on the hub thread, one at a time, and must not block
-// (docs/design/realtime.md §4): the same shape a process will have once the
+// (docs/design/realtime.md §5): the same shape a process will have once the
 // Mettle runtime lands.
 //
 // Files: types (this), members (table + push/broadcast), channel (router,

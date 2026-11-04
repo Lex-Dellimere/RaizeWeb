@@ -8,7 +8,7 @@
 //   loop   the hub thread: reading, writing, closing slots, mailbox
 //   hub    the public API: create/start/stop, upgrade from a route, send
 //
-// Handler contract (docs/design/realtime.md §4). Every callback runs on the
+// Handler contract (docs/design/realtime.md §5). Every callback runs on the
 // hub thread, one at a time, and must not block:
 //
 //   on_open(hub, sock, arg) -> rawptr     after the 101 is sent; `arg` is the
