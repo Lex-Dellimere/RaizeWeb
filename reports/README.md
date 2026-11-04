@@ -39,7 +39,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [027](027-docs-reference-guide.md) | missing | raize_web | high | Most exports lack contract docs; no reference pages or guide yet | open; P5-P7 (D5: `///` contracts on every export, doccheck in lint, generated reference, docs/guide.md) |
 | [028](028-rate-limit-middleware.md) | missing | raize_web | medium | No per-peer rate-limiting middleware (`rz_use_rate_limit`) | open |
 | [029](029-guards-before-405.md) | limitation | raize_web | low | Guards run before the router's method check (guard answer instead of 405) | open |
-| [029](029-telemetry-library.md) | missing | raize_web | medium | No telemetry library (events, handlers, spans, metrics) | open; part of D8 |
+| [030](030-telemetry-library.md) | missing | raize_web | medium | No telemetry library (events, handlers, spans, metrics) | open; part of D8 |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its
