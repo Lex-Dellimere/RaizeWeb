@@ -3,7 +3,7 @@
 - **Project:** Mettle runtime (C interop), affecting raize_web and raize_auth
 - **Kind:** limitation (blocker for auth)
 - **Severity:** high
-- **Status:** open; root cause is the Mettle runtime (crypto's reports/001), filed as feature
+- **Status:** fixed upstream: cryptex 0.2.0 (e7ac41f) is pure Mettle, callable from any thread (same cr_* API; not yet audited, cryptex reports/007)
   request `~/Projects/mettle/reports/058-foreign-calls-from-mettle-threads.md`
 
 `~/Projects/mettle/crypto` wraps libsodium (verified: every vector suite OK in debug and release).

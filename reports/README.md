@@ -40,7 +40,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [028](028-rate-limit-middleware.md) | missing | raize_web | medium | No per-peer rate-limiting middleware (`rz_use_rate_limit`) | open |
 | [029](029-guards-before-405.md) | limitation | raize_web | low | Guards run before the router's method check (guard answer instead of 405) | open |
 | [030](030-telemetry-library.md) | missing | raize_web | medium | No telemetry library (events, handlers, spans, metrics) | open; part of D8 |
-| [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | open; needs a Mettle runtime fix or a main-thread crypto service |
+| [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | fixed upstream (cryptex 0.2.0 pure Mettle) |
 | [032](032-upgrade-abort-leak.md) | bug | raize_web | low | An upgrade aborted after the handler returns leaks its RzConn and a hub slot | open |
 | [033](033-compiler-exportless-import-visibility.md) | compiler | Mettle compiler | low | An export-less module imported first through another module is invisible to a later direct importer | open; worked around by exporting shared helpers |
 
