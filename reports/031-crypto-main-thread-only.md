@@ -3,7 +3,8 @@
 - **Project:** Mettle runtime (C interop), affecting raize_web and raize_auth
 - **Kind:** limitation (blocker for auth)
 - **Severity:** high
-- **Status:** open; root cause is the Mettle runtime (crypto's reports/001)
+- **Status:** open; root cause is the Mettle runtime (crypto's reports/001), filed as feature
+  request `~/Projects/mettle/reports/058-foreign-calls-from-mettle-threads.md`
 
 `~/Projects/mettle/crypto` wraps libsodium (verified: every vector suite OK in debug and release).
 `Mettle/docs/shared-libraries.md` says only the main thread may call a foreign library: threads
