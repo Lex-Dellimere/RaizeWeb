@@ -94,6 +94,30 @@ export fn rz_session_rotate(ctx: RzContext*) -> int32 {
   return RZ_OK;
 }
 
+/// Signs the session in as a user: sets its subject (the owner id the session library
+/// indexes, so ses_revoke_subject can end one user's sessions) and rotates the id and
+/// CSRF token, keeping the values. Call it on login instead of rz_session_rotate; keep
+/// the user's name in the data as well if handlers read it. Creates a session when the
+/// request has none.
+///
+/// in:      ctx the request; subject 1..256 bytes (the user id)
+/// returns: RZ_OK; RZ_E_USAGE (no rz_use_session); RZ_E_INVALID (empty or oversized
+///          subject); RZ_E_IO (the store refused; the old id still works)
+/// owns:    copies subject
+/// thread:  the worker serving the request
+/// example:
+///   rz_session_put(ctx, "user", name);
+///   rz_session_login(ctx, name);
+///   return rz_ctx_redirect(ctx, 303, "/");
+export fn rz_session_login(ctx: RzContext*, subject: string) -> int32 {
+  if (rz__ses_req(ctx) == 0) { return RZ_E_USAGE; }
+  var r: Rz_SesReq* = rz__ses_ensure(ctx);
+  if (r == 0) { return RZ_E_IO; }
+  var rc: int32 = ses_set_subject(&rz__ses_global()->m, &r->s, subject);
+  if (rc != SES_OK) { return rz__ses_status(rc); }
+  return rz_session_rotate(ctx);
+}
+
 /// Ends the session (logout): it is revoked in the store and the cookie is cleared.
 /// A later write in the same request starts a fresh session.
 ///

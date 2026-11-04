@@ -3,7 +3,7 @@
 - **Project:** session (used by raize_web's `raize_session`)
 - **Kind:** limitation
 - **Severity:** low
-- **Status:** open; asks for the session library (its repo is not raize's to edit)
+- **Status:** fixed: session `ses_peek` and `ses_set_subject`; raize_session uses `ses_peek` in `rz_conn_session_get` and sets the subject in `rz_session_login`
 
 ## What happens
 1. **Subject fixed at creation.** `ses_create` takes the subject (user id) and `ses_rotate`

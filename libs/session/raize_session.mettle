@@ -9,7 +9,7 @@
 // none.
 //
 //   use    RzSessionConfig, rz_session_defaults, rz_use_session, rz_csrf_exempt
-//   api    rz_session_get/_put/_delete/_rotate/_drop/_id_present, rz_csrf_token,
+//   api    rz_session_get/_put/_delete/_rotate/_login/_drop/_id_present, rz_csrf_token,
 //          rz_flash_put, rz_flash_take
 //   conn   rz_conn_session_get (a Signal mount or channel join)
 //   state  internal: the published settings and the per-request state

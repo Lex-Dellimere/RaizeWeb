@@ -9,6 +9,7 @@
 // a valid CSRF token (403) unless the path is exempt; runs the rest of the chain;
 // then rotates when the policy says so (ses_needs_rotation), touches and saves
 // (ses_touch), and writes the cookie when the token changed or clears a stale one.
+// A WebSocket upgrade (an Upgrade header) uses ses_peek instead: read-only, no flash taken.
 
 import "std/mem";
 import "session/session";
@@ -214,7 +215,16 @@ export fn rz__mw_session(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int3
   r->now = rz__ses_now();
   var tok: string = rz_str_empty();
   var found: int32 = ses_cookie_find(rz_ctx_header(ctx, "cookie"), g->cookie, &tok);
-  if (found == SES_OK && ses_lookup(&g->m, tok, r->now, &r->s) != SES_OK) { r->clear = true; }
+  if (found == SES_OK) {
+    // A WebSocket upgrade only reads the session (the page it belongs to takes the
+    // flash): ses_peek leaves flash, last_seen and the record alone, and its
+    // read-only session refuses every write-back below.
+    var is_upgrade: bool = rz_ctx_header(ctx, "upgrade").length > 0;
+    var lrc: int32 = SES_OK;
+    if (is_upgrade) { lrc = ses_peek(&g->m, tok, r->now, &r->s); }
+    else { lrc = ses_lookup(&g->m, tok, r->now, &r->s); }
+    if (lrc != SES_OK) { r->clear = true; }
+  }
   ctx->session = (rawptr)r;
   var rc: int32 = 0;
   if (rz__ses_csrf_needed(ctx) && !rz__ses_csrf_ok(ctx, r)) {

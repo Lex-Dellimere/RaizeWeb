@@ -1,6 +1,6 @@
 // tests/fixtures/app/session — raize_session end to end (reports/020): cookie
 // sessions over a test-only thread-safe SesStore (teststore.mettle), rotation on
-// login, logout, idle expiry, the CSRF guard with an exempt prefix, flash, and a
+// login (rz_session_login), logout, idle expiry, the CSRF guard with an exempt prefix, flash, and a
 // Signal mount reading the session. Driven by test.sh and client.py; default port 8076.
 //
 //   GET  /         user, a flash notice (taken once) and the CSRF token; creates a session
@@ -36,7 +36,7 @@ fn login(ctx: RzContext*) -> int32 {
   var name: string = rz_str_empty();
   if (!rz_ctx_form(ctx, "user", &name) || name.length == 0) { return rz_ctx_text(ctx, 400, "user?\n"); }
   if (rz_session_put(ctx, "user", name) != RZ_OK) { return rz_ctx_text(ctx, 500, "put failed\n"); }
-  if (rz_session_rotate(ctx) != RZ_OK) { return rz_ctx_text(ctx, 500, "rotate failed\n"); }
+  if (rz_session_login(ctx, name) != RZ_OK) { return rz_ctx_text(ctx, 500, "login failed\n"); }
   rz_flash_put(ctx, "notice", "welcome {name}");
   return rz_ctx_redirect(ctx, 303, "/");
 }

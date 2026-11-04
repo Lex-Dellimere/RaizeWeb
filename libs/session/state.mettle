@@ -20,9 +20,8 @@ import "raize_core/context/date";
 /// internal: raize_session. Most rz_csrf_exempt prefixes.
 export const RZ__SES_MAX_EXEMPT: int32 = 8;
 
-/// internal: raize_session. The subject every raize session is created with. The
-/// session library fixes a subject at creation and keeps it across rotation, so the
-/// signed-in user lives in the session data instead (reports/034).
+/// internal: raize_session. The subject an anonymous session is created with;
+/// rz_session_login replaces it with the user (ses_set_subject).
 export const RZ__SES_SUBJECT: string = "raize";
 
 /// internal: raize_session. The published settings (one app per process).

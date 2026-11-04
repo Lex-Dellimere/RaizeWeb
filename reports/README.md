@@ -43,7 +43,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | fixed upstream (cryptex 0.2.0 pure Mettle) |
 | [032](032-upgrade-abort-leak.md) | bug | raize_web | low | An upgrade aborted after the handler returns leaks its RzConn and a hub slot | open |
 | [033](033-compiler-exportless-import-visibility.md) | compiler | Mettle compiler | low | An export-less module imported first through another module is invisible to a later direct importer | open; worked around by exporting shared helpers |
-| [034](034-session-library-gaps.md) | limitation | session | low | `session` has no subject change and no read-only lookup: raize sessions share one subject, `rz_conn_session_get` consumes pending flash | open; asks for the session library |
+| [034](034-session-library-gaps.md) | limitation | session | low | `session` has no subject change and no read-only lookup: raize sessions share one subject, `rz_conn_session_get` consumes pending flash | fixed (ses_peek, ses_set_subject; rz_session_login) |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its

@@ -69,7 +69,8 @@ want "POST /login" 303 '' -b "rz_sid=$A" --data-urlencode "_csrf=$T1" --data-url
 S=$(sid)
 [ -n "$S" ] && [ "$S" != "$A" ] && ok "  ... login rotated the session id" || bad "rotation" "old $A new $S"
 want "the pre-login id is dead" 200 $'user=\npresent=no' -b "rz_sid=$A" "$B/peek"
-want "GET / after login: the value and the flash (once per take)" 200 $'user=ann\nflash=welcome ann\nagain=\n' -b "rz_sid=$S" "$B/"
+if python3 "$DIR/client.py" "$PORT" "$S"; then ok "session client (socket mount) before the flash is shown"; else bad "session client" "see above"; fi
+want "GET / after login and a Signal page view: the value and the flash (once per take)" 200 $'user=ann\nflash=welcome ann\nagain=\n' -b "rz_sid=$S" "$B/"
 T2=$(field csrf)
 [ -n "$T2" ] && [ "$T2" != "$T1" ] && ok "  ... rotation changed the CSRF token" || bad "csrf after rotate" "$T1 / $T2"
 want "GET / again: the value persists, the flash is gone" 200 $'user=ann\nflash=\n' -b "rz_sid=$S" "$B/"
@@ -78,7 +79,6 @@ want "the new CSRF token works" 200 'ok' -b "rz_sid=$S" -H "x-csrf-token: $T2" -
 
 want "GET /me: the Signal's 2-arg mount reads the session" 200 '<p class="user">ann</p>' -b "rz_sid=$S" "$B/me"
 want "GET /me without a session: empty user" 200 '<p class="user"></p>' "$B/me"
-if python3 "$DIR/client.py" "$PORT" "$S"; then ok "session client (socket mount)"; else bad "session client" "see above"; fi
 
 want "POST /logout" 200 'bye' -b "rz_sid=$S" -H "x-csrf-token: $T2" -X POST "$B/logout"
 [[ "$(setcookie)" == "rz_sid=;"*"Max-Age=0"* ]] && ok "  ... logout clears the cookie" || bad "logout cookie" "$(setcookie)"
