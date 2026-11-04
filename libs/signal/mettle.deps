@@ -1,5 +1,0 @@
-# >>> mbuild: generated, edits inside this block are overwritten
-raize_core=../core
-raize_realtime=../realtime
-raize_signal=.
-# <<< mbuild

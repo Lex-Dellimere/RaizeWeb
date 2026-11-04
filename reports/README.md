@@ -41,6 +41,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [029](029-guards-before-405.md) | limitation | raize_web | low | Guards run before the router's method check (guard answer instead of 405) | open |
 | [030](030-telemetry-library.md) | missing | raize_web | medium | No telemetry library (events, handlers, spans, metrics) | open; part of D8 |
 | [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | open; needs a Mettle runtime fix or a main-thread crypto service |
+| [032](032-upgrade-abort-leak.md) | bug | raize_web | low | An upgrade aborted after the handler returns leaks its RzConn and a hub slot | open |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its

@@ -7,3 +7,4 @@ t/
 *.log
 *.gen.mettle
 .mbuild/
+/libs/*/mettle.deps
