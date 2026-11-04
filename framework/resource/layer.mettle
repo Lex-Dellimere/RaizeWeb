@@ -174,11 +174,8 @@ export fn rz__record_own(def: RzResourceDef*, dst: rawptr, src: rawptr) -> int32
     var f: RzField* = &def->fields[i];
     if (f->kind == RZ_KIND_STRING) {
       var s: string = rz_field_get_str(src, f);
-      var c: string = rz_str_empty();
-      if (s.length > 0) {
-        c = rz_str_dup(s);
-        if (c.length != s.length) { rc = RZ_E_NOMEM; }
-      }
+      var c: string = rz_str_dup(s);
+      if (c.length != s.length) { rc = RZ_E_NOMEM; }
       rz_field_set_str(dst, f, c);
     }
   }
@@ -194,7 +191,7 @@ export fn rz__record_free_strings(def: RzResourceDef*, rec: rawptr) {
     var f: RzField* = &def->fields[i];
     if (f->kind == RZ_KIND_STRING) {
       var s: string = rz_field_get_str(rec, f);
-      if (s.length > 0) { rz_str_free(s); }
+      rz_str_free(s);
       rz_field_set_str(rec, f, rz_str_empty());
     }
   }

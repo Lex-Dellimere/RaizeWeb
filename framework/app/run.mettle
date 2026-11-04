@@ -71,7 +71,7 @@ fn rz__app_config(app: RzApp*) {
   var port: string = rz__argv_port(&found);
   if (found) {
     rz_config_apply(c, "--port", "port", port, &e);
-    if (port.length > 0) { rz_str_free(port); }
+    rz_str_free(port);
   }
   rz__config_errors(app, &e, "pass --port N with N in 1..65535");
   rz_config_validate(c, &e);

@@ -55,9 +55,23 @@ export fn rz_str_byte(s: string, i: int64) -> int32 {
 // Owning copies
 // ---------------------------------------------------------------------------
 
-// A NUL-terminated heap copy. Free with rz_str_free.
+/// Returns a NUL-terminated heap copy of `s`; an empty `s` gives rz_str_empty()
+/// without allocating.
+///
+/// in:      s  the bytes to copy; borrowed
+/// returns: the copy (same length as `s`), or rz_str_empty() when `s` is empty or
+///          memory runs out (check `.length` against `s.length`)
+/// owns:    the caller owns the copy and frees it with rz_str_free (a no-op on
+///          the empty result)
+/// thread:  any
+/// example:
+///   var d: string = rz_str_dup(rz_str_trim(raw));
+///   rz_str_free(d);
 export fn rz_str_dup(s: string) -> string {
   var n: int64 = (int64)s.length;
+  if (n == 0) {
+    return rz_str_empty();
+  }
   var p: uint8* = (uint8*)malloc(n + 1);
   if (p == 0) {
     return rz_str_empty();
@@ -71,7 +85,22 @@ export fn rz_str_dup(s: string) -> string {
   return rz_str_view(p, n);
 }
 
+/// Frees a string made by rz_str_dup / rz_str_from_c / rz_buf_take. A string of
+/// length 0 is never freed, so rz_str_free(rz_str_empty()) and freeing an empty
+/// rz_str_dup result are safe no-ops.
+///
+/// in:      s  an owned string, or any empty string
+/// returns: nothing
+/// owns:    takes `s`; a non-empty `s` that was not allocated by raize is the
+///          caller's bug and is not detected
+/// thread:  any
+/// example:
+///   var d: string = rz_str_dup("x");
+///   rz_str_free(d);
 export fn rz_str_free(s: string) {
+  if (s.length == 0) {
+    return;
+  }
   if (s.chars != 0) {
     free(s.chars);
   }
@@ -706,5 +735,19 @@ export fn rz_buf_free(b: RzBuf*) {
   var s: string = rz_buf_take(b);
   if (!rz_str_eq(s, "id=77&ok")) { rz_str_free(s); return 1; }
   rz_str_free(s);
+  return 0;
+}
+
+@test fn t_raize_str_dup_free_empty() -> int32 {
+  rz_str_free(rz_str_empty());
+  rz_str_free("");
+  var e: string = rz_str_dup("");
+  if (e.length != 0) { return 1; }
+  rz_str_free(e);
+  var x: string = rz_str_dup("x");
+  if (x.length != 1) { return 2; }
+  if (!rz_str_eq(x, "x")) { rz_str_free(x); return 3; }
+  if (x.chars[1] != 0) { rz_str_free(x); return 4; }
+  rz_str_free(x);
   return 0;
 }

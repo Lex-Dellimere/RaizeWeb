@@ -29,6 +29,15 @@ want() {
   if [ "$code" = "$status" ] && [[ "$body" == *"$sub"* ]]; then ok "$label -> $code ${body:0:70}"
   else bad "$label" "want $status ~$sub, got $code $body"; fi
 }
+# exact <label> <status> <whole-body> <curl args...>: the body must equal <whole-body>.
+exact() {
+  local label=$1 status=$2 whole=$3; shift 3
+  local out code body
+  out=$(curl -s -w '\n%{http_code}' "$@")
+  code=${out##*$'\n'}; body=${out%$'\n'*}
+  if [ "$code" = "$status" ] && [ "$body" = "$whole" ]; then ok "$label -> $code ${body:0:90}"
+  else bad "$label" "want $status =$whole, got $code $body"; fi
+}
 
 "$BIN" --port "$PORT" >"$LOG" 2>&1 &
 PID=$!
@@ -37,19 +46,27 @@ grep -q "slice: listening on 127.0.0.1:$PORT" "$LOG" && ok "listening line" || b
 
 API=http://127.0.0.1:$PORT/api/notes
 J='-H Content-Type:application/json'
-want "POST valid"        201 '{"id":1,"text":"hello","pinned":false}' $J -X POST -d '{"text":"  hello  "}' "$API"
+exact "POST valid"       201 '{"id":1,"text":"hello","pinned":false}' $J -X POST -d '{"text":"  hello  "}' "$API"
 want "POST {}"           400 '"fields":{"text":"can'"'"'t be blank"}' $J -X POST -d '{}' "$API"
 LONG=$(printf 'a%.0s' $(seq 1 41))
 want "POST 41 bytes"     400 '"text":"is too long (at most 40)"' $J -X POST -d "{\"text\":\"$LONG\"}" "$API"
 want "POST not object"   400 '"error":"body is not a JSON object"' $J -X POST -d '[1]' "$API"
-want "GET /1"            200 '"id":1' "$API/1"
+exact "GET /1"           200 '{"id":1,"text":"hello","pinned":false}' "$API/1"
 want "GET /999"          404 '"error":"not found"' "$API/999"
 want "GET /abc"          400 '"error":"bad id"' "$API/abc"
 want "POST /1/pin"       200 '"pinned":true' -X POST "$API/1/pin"
+# The stored record, not the action's response copy: modify must write back.
+exact "GET /1 after pin" 200 '{"id":1,"text":"hello","pinned":true}' "$API/1"
 want "POST /999/pin"     404 'not found' -X POST "$API/999/pin"
+exact "POST second"      201 '{"id":2,"text":"world","pinned":false}' $J -X POST -d '{"text":"world"}' "$API"
+# scan: every stored record, in id order.
+exact "GET list (2)"     200 '[{"id":1,"text":"hello","pinned":true},{"id":2,"text":"world","pinned":false}]' "$API"
 want "DELETE /1"         204 '' -X DELETE "$API/1"
 want "DELETE /1 again"   404 'not found' -X DELETE "$API/1"
-want "GET list"          200 '[]' "$API"
+exact "GET /1 deleted"   404 '{"error":"not found"}' "$API/1"
+exact "GET list (1)"     200 '[{"id":2,"text":"world","pinned":false}]' "$API"
+want "DELETE /2"         204 '' -X DELETE "$API/2"
+exact "GET list (0)"     200 '[]' "$API"
 want "GET /counter"      200 '<p>0</p>' "http://127.0.0.1:$PORT/counter"
 want "GET /rz/signal.js" 200 '' "http://127.0.0.1:$PORT/rz/signal.js"
 
