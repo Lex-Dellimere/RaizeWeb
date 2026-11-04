@@ -103,7 +103,8 @@
   }
   function connect() {
     var proto = location.protocol === "https:" ? "wss://" : "ws://";
-    ws = new WebSocket(proto + location.host + "/signal/websocket?vsn=2.0.0");
+    // The page path picks the guards the upgrade runs and the one Signal it may join.
+    ws = new WebSocket(proto + location.host + "/signal/websocket?vsn=2.0.0&path=" + encodeURIComponent(location.pathname));
     ws.onopen = function () {
       retry = 0;
       push(topic, "phx_join", {}, function (reply) {

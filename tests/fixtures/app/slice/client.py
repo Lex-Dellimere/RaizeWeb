@@ -15,7 +15,7 @@ sc.PORT = sc.w.PORT = sc.cc.PORT = PORT
 
 
 def main():
-    s = sc.Signal("counter")
+    s = sc.Signal("counter", path="/counter")
     sc.check("join signal:counter replies ok", s.join[4].get("status") == "ok", s.join)
     sc.check("joined page shows <p>0</p>", "<p>0</p>" in s.page(), s.page())
     reply = s.event("Inc")

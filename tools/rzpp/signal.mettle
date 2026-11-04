@@ -2,9 +2,11 @@
 //
 // `@signal struct Counter` requires `enum CounterMsg`, `fn counter_update(s: Counter*,
 // msg: CounterMsg)` and `fn counter_view(s: Counter*) -> RzHtml*`; `counter_mount` and
-// `counter_leave` are optional. It appends typed wrappers (no fn-type casts):
+// `counter_leave` are optional; mount is `fn counter_mount(s: Counter*)` or, to read the
+// user, `fn counter_mount(s: Counter*, c: RzConn*) -> int32` (A9). It appends typed
+// wrappers (no fn-type casts):
 //
-//   Counter__mount/__view/__leave(state: rawptr)   call the app's functions
+//   Counter__mount(state, c) -> int32, Counter__view/__leave(state: rawptr)
 //   counter_signal(app, path, head)                 mounts the Signal, topic "signal:counter"
 //   counter_publish(topic, m) -> bool               any thread
 //
@@ -23,6 +25,29 @@ fn rzpp_signal_wrapper(g: RzppGen*, out: RzBuf*, T: string, fname: string, what:
     rz_buf_add(out, "fn {T}__{what}(state: rawptr) {{\n  {fname}(({T}*)state);\n}\n");
   } else {
     rz_buf_add(out, "fn {T}__{what}(state: rawptr) {{\n}\n");
+  }
+}
+
+// The mount wrapper (DECISIONS A9). `fn <snake>_mount(s: T*, c: RzConn*) -> int32` gets
+// the request that opened the page and may refuse (non-RZ_OK); the 1-arg form
+// `fn <snake>_mount(s: T*)` and no mount at all both answer RZ_OK.
+fn rzpp_signal_mount(g: RzppGen*, out: RzBuf*, T: string, fname: string) {
+  rz_buf_add(out, "fn {T}__mount(state: rawptr, c: RzConn*) -> int32 {{\n");
+  var at: int64 = rz_str_find(g->src, "fn {fname}(");
+  if (at < 0) {
+    rz_buf_add(out, "  return RZ_OK;\n}\n");
+    return;
+  }
+  var i: int64 = at;
+  var two: bool = false;
+  while (i < (int64)g->src.length && g->src.chars[i] != 41) {
+    if (g->src.chars[i] == 44) { two = true; }
+    i = i + 1;
+  }
+  if (two) {
+    rz_buf_add(out, "  return {fname}(({T}*)state, c);\n}\n");
+  } else {
+    rz_buf_add(out, "  {fname}(({T}*)state);\n  return RZ_OK;\n}\n");
   }
 }
 
@@ -55,7 +80,7 @@ export fn rzpp_signal(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
   rz_strlist_free(gen);
   if (rzpp_failed(g)) { return; }
   rz_buf_add(out, "\n// ---- @signal {T} ----\n");
-  rzpp_signal_wrapper(g, out, T, "{s}_mount", "mount");
+  rzpp_signal_mount(g, out, T, "{s}_mount");
   rzpp_signal_wrapper(g, out, T, "{s}_leave", "leave");
   rz_buf_add(out, "fn {T}__view(state: rawptr) -> RzHtml* {{\n  return {s}_view(({T}*)state);\n}\n");
   rz_buf_add(out, "/// Mounts Signal {T}: its page at `path` (GET), live over /signal/websocket on topic\n/// \"signal:{s}\".\n");

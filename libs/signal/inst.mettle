@@ -41,7 +41,9 @@ export const RZ_SIGNAL_MAX_SUBS: int64 = 16;
 export struct RzSignalDef {
   name: string;
   size: int64;
-  mount: fn(rawptr) -> void;
+  mount: fn(rawptr) -> void;                     // 1-arg form (rz_signal_define_raw); or 0
+  mount_conn: fn(rawptr, RzConn*) -> int32;      // 2-arg form (rz__signal_define); or 0
+  path: string;    // the page path its sockets must be opened for; "" = any (borrowed)
   handle: fn(rawptr, string, string) -> int32;   // decode + update
   view: fn(rawptr) -> RzHtml*;
   leave: fn(rawptr) -> void;

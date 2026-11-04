@@ -217,7 +217,7 @@ export fn rz__app_route(app: RzApp*, verb: string, base: string, suffix: string,
 ///          size sizeof the state; mount/handle/view/leave the generated wrappers
 /// returns: nothing; mistakes are recorded for rz_run
 /// owns:    copies name, path and head
-export fn rz__app_signal(app: RzApp*, name: string, path: string, head: string, size: int64, mount: fn(rawptr) -> void, handle: fn(rawptr, string, string) -> int32, view: fn(rawptr) -> RzHtml*, leave: fn(rawptr) -> void) {
+export fn rz__app_signal(app: RzApp*, name: string, path: string, head: string, size: int64, mount: fn(rawptr, RzConn*) -> int32, handle: fn(rawptr, string, string) -> int32, view: fn(rawptr) -> RzHtml*, leave: fn(rawptr) -> void) {
   if (app == 0) { return; }
   if (app->state->nsignals >= RZ__APP_MAX_SIGNALS) {
     rz__app_error(app, "{name}_signal: more than {RZ__APP_MAX_SIGNALS} Signals — mount fewer");

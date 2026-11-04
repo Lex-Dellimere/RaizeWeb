@@ -22,6 +22,7 @@ export struct Rz_Conn {
   cookie: string;   // every Cookie header, joined with "; "; owned
   peer: string;     // rz_ctx_peer at upgrade time, "a.b.c.d"; owned
   user: rawptr;     // rz_ctx_user at upgrade time; borrowed from the app
+  path: string;     // the page path a Signal socket was opened for (F5); owned, "" if none
 }
 
 /// The request that opened a socket, as a Signal mount or a channel join sees it.
@@ -55,7 +56,19 @@ export fn rz__conn_from_ctx(ctx: RzContext*) -> RzConn* {
   rz_buf_free(b);
   d->peer = rz_str_dup(rz_ctx_peer(ctx));
   d->user = ctx->user;
+  d->path = rz_str_empty();
   return c;
+}
+
+/// internal: framework/signal (the Signal socket upgrade and the first-GET render).
+/// Records the page path this connection was opened for (DECISIONS F5).
+/// in:      c the connection; path the page path (already normalized)
+/// returns: nothing
+/// owns:    copies `path`; replaces (and frees) any earlier one
+export fn rz__conn_set_path(c: RzConn*, path: string) {
+  if (c == 0 || c->state == 0) { return; }
+  rz_str_free(c->state->path);
+  c->state->path = rz_str_dup(path);
 }
 
 /// internal: framework/signal, framework/channel (P3-C). Frees a connection copy.
@@ -67,6 +80,7 @@ export fn rz__conn_free(c: RzConn*) {
   if (c->state != 0) {
     rz_str_free(c->state->cookie);
     rz_str_free(c->state->peer);
+    rz_str_free(c->state->path);
     free((rawptr)c->state);
   }
   free((rawptr)c);
@@ -110,4 +124,18 @@ export fn rz_conn_user(c: RzConn*) -> rawptr {
 export fn rz_conn_peer(c: RzConn*) -> string {
   if (c == 0 || c->state == 0) { return rz_str_empty(); }
   return c->state->peer;
+}
+
+/// The page path a Signal socket was opened for (`?path=` on /signal/websocket), or
+/// the request path on a Signal's first-GET render.
+///
+/// in:      c the connection
+/// returns: the path ("/admin"), or "" for a channel socket
+/// owns:    a view into `c`; valid while the socket is open
+/// thread:  any
+/// example:
+///   if (rz_str_eq(rz_conn_path(c), "/admin")) { ... }
+export fn rz_conn_path(c: RzConn*) -> string {
+  if (c == 0 || c->state == 0) { return rz_str_empty(); }
+  return c->state->path;
 }

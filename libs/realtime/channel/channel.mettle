@@ -228,6 +228,16 @@ export fn rz_chan_define(r: RzChanRouter*, pattern: string, join: fn(RzChanCtx*,
 /// example:
 ///   fn h_socket(ctx: RzContext*) -> int32 { return rz_chan_upgrade(ctx, g_chans); }
 export fn rz_chan_upgrade(ctx: RzContext*, r: RzChanRouter*) -> int32 {
+  return rz__chan_upgrade_at(ctx, r, rz_str_empty());
+}
+
+/// internal: app (the Signal socket, DECISIONS F5). rz_chan_upgrade that also records
+/// in the socket's RzConn the page path it was opened for (rz_conn_path).
+/// in:      ctx the upgrade request (guards for `path` already ran); r the router;
+///          path the page path, "" for none
+/// returns: the status, as rz_chan_upgrade
+/// owns:    copies `path` into the socket's RzConn
+export fn rz__chan_upgrade_at(ctx: RzContext*, r: RzChanRouter*, path: string) -> int32 {
   if (r == 0) { return rz_hub_upgrade(ctx, 0, 0); }
   var cs: Rz_ChanSock* = (Rz_ChanSock*)calloc(1, sizeof(Rz_ChanSock));
   if (cs == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
@@ -237,5 +247,6 @@ export fn rz_chan_upgrade(ctx: RzContext*, r: RzChanRouter*) -> int32 {
     free((rawptr)cs);
     return rz_ctx_text(ctx, 500, "out of memory\n");
   }
+  if (path.length > 0) { rz__conn_set_path(cs->conn, path); }
   return rz_hub_upgrade_with(ctx, r->hub, &r->handler, (rawptr)cs, &rz__chan_sock_free);
 }

@@ -80,19 +80,35 @@ def http_get(path):
 
 
 class Signal:
-    def __init__(self, name="todos"):
+    """Opens /signal/websocket and joins signal:<name>. `path` is the page path
+    signal.js sends (rz_run Signals need it, DECISIONS F5); `cookie` a Cookie header
+    value. A refused upgrade leaves `self.join` None and `self.c.head` the response."""
+
+    def __init__(self, name="todos", path=None, cookie=None):
         self.c = cc.Client.__new__(cc.Client)
         self.c.s = socket.create_connection(("127.0.0.1", PORT), timeout=3)
-        _, self.c.head = w.handshake(self.c.s, path="/signal/websocket?vsn=2.0.0")
+        url = "/signal/websocket?vsn=2.0.0"
+        if path is not None:
+            url += "&path=" + path
+        extra = f"Cookie: {cookie}\r\n" if cookie else ""
+        _, self.c.head = w.handshake(self.c.s, path=url, extra=extra)
+        self.topic = "signal:" + name
+        self.join = None
+        self.tree = None
+        if b" 101 " not in self.c.head.split(b"\r\n", 1)[0]:
+            return
         self.c.r = w.Reader(self.c.s)
         self.c.ref = 0
         self.c.join_refs = {}
-        self.topic = "signal:" + name
         self.pushes = 0
-        self.tree = None
         ref = self.c.send(self.topic, "phx_join", {})
         self.join = self.c.reply_to(ref)
         self.tree = self.join[4].get("response", {}).get("rendered")
+
+    def join_topic(self, name):
+        """Joins another Signal on this socket; returns the reply payload."""
+        topic = "signal:" + name
+        return self.reply_to(self.c.send(topic, "phx_join", {}))[4]
 
     def frame(self):
         """Next message; pushed diffs are merged on the way, like signal.js."""

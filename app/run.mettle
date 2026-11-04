@@ -100,6 +100,18 @@ fn rz__app_socket(ctx: RzContext*) -> int32 {
   return rz_chan_upgrade(ctx, rz__app_current()->state->chans);
 }
 
+// GET /signal/websocket?path=<page> (DECISIONS F5): the page's guards run here, so a
+// 2-arg mount sees the user they set, and the socket may join only that page's Signal.
+fn rz__app_signal_socket(ctx: RzContext*) -> int32 {
+  var path: string = rz_path_normalize(rz_ctx_query(ctx, "path"), ctx->arena);
+  if (path.length == 0) {
+    return rz_ctx_text(ctx, 400, "signal socket: pass ?path=<page path> (signal.js does)\n");
+  }
+  var rc: int32 = rz__app_run_guards(ctx, path);
+  if (rc != RZ_OK) { return rc; }
+  return rz__chan_upgrade_at(ctx, rz__app_current()->state->chans, path);
+}
+
 // Each rz_channel declaration onto the channel router, and /socket/websocket for them.
 fn rz__derive_channels(app: RzApp*) {
   var st: Rz_AppState* = app->state;
@@ -129,12 +141,12 @@ fn rz__derive_sockets(app: RzApp*) {
   if (st->chans == 0) { rz__app_error(app, "out of memory making the channel router — lower the load or add memory"); return; }
   for i in 0..st->nsignals {
     var m: Rz_SignalMount* = &st->signals[i];
-    if (rz_signal_define_raw(st->chans, m->name, m->size, m->mount, m->handle, m->view, m->leave) != 0) {
+    if (rz__signal_define(st->chans, m->name, m->path, m->size, m->mount, m->handle, m->view, m->leave) != 0) {
       rz__app_error(app, "{m->name}_signal: cannot register the Signal — mount fewer than 32 Signals, each once");
     }
   }
   if (st->nsignals > 0) {
-    rz_get(app, "/signal/websocket", &rz__app_socket);
+    rz_get(app, "/signal/websocket", &rz__app_signal_socket);
     rz_get(app, "/rz/signal.js", &rz_signal_js);
   }
   if (st->nchannels > 0) { rz__derive_channels(app); }

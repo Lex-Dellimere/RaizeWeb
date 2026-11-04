@@ -46,7 +46,7 @@ export struct Rz_SignalMount {
   path: string;                                  // the page route; owned
   head: string;                                  // extra <head> markup; owned
   size: int64;                                   // sizeof the state struct
-  mount: fn(rawptr) -> void;                     // generated typed wrappers
+  mount: fn(rawptr, RzConn*) -> int32;           // generated typed wrappers (A9)
   handle: fn(rawptr, string, string) -> int32;
   view: fn(rawptr) -> RzHtml*;
   leave: fn(rawptr) -> void;
