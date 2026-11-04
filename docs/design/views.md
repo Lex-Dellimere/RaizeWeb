@@ -1,6 +1,7 @@
 # Views and Signals: markup as Mettle
 
-Status: proposal, 2026-11-04. **Signal** (`RzSignal`) is raize's name for a
+Status: built on the preprocessor path, 2026-11-04 (see §7 for what differs
+from the plan below). **Signal** (`RzSignal`) is raize's name for a
 real-time page in the style of Phoenix LiveView: the model is adapted to
 Mettle, not copied by name. Replaces the "templates v2" idea in
 `realtime.md` §M5 (a separate template language). Nothing is built yet.
@@ -69,7 +70,7 @@ fn todos_update(s: Todos*, msg: TodosMsg) {
   }
 }
 
-fn todos_view(s: Todos*) -> Html {
+fn todos_view(s: Todos*) -> RzHtml* {
   return html"""
     <h1>Todos ({open_count(s)} open)</h1>
     <form on:submit={Add}>
@@ -88,12 +89,12 @@ fn todos_view(s: Todos*) -> Html {
   """;
 }
 
-fn empty_state(message: string) -> Html {
+fn empty_state(message: string) -> RzHtml* {
   return html"""<p class="empty">{message}</p>""";
 }
 
-// Mounted like any route.
-rz_signal(router, "/todos", todos_mount, todos_update, todos_view);   // an RzSignal
+// Registered once (TodosMsg__signal is generated, see §7), served by a route.
+TodosMsg__signal(chans, "todos", &todos_mount, &todos_view, &todos_leave);
 ```
 
 ## 2. The rules (all of them)
@@ -208,3 +209,39 @@ statics/dynamics renderer in `framework/signal` is shared by both.
 3. Typed events (`on:click={Toggle(id)}`) replace string `phx-click` in
    views. Keep raw `phx-*` attributes for interop with hand-written JS?
    Proposed: yes, both.
+
+## 7. What was built (2026-11-04)
+
+`examples/todos` is a working Signal, verified in a browser and by
+`make signal-test`. Differences from the plan above:
+
+- **Views return `RzHtml*`** (raize's flat namespace needs the prefix).
+- **Registration is generated.** rzpp finds `update` by its signature (the
+  function whose second parameter is the message enum) and generates
+  `NameMsg__decode`, `NameMsg__handle` (decode, then call update directly)
+  and `NameMsg__signal(chans, name, &mount, &view, &leave)`, which type-checks
+  the three functions against the state type. A generic
+  `rz_signal_define<S, M>` was the plan, but the compiler cannot (yet) see
+  type parameters inside a lambda, take `&generic<T>`, or call through a
+  pointer with an enum argument.
+- **Change tracking is by value, not by dependency.** Every event re-runs
+  `view`, and `rz_html_diff` compares the new tree with the last one (text by
+  value, nodes by fingerprint). The wire output is the same minimal diff, but
+  the view does all its work each time. Per-field dependency tracking (§3)
+  becomes possible when the compiler reports what each hole reads.
+- **Field-access holes render through interpolation.** `{s->draft}` becomes
+  `rz_html_put_text(h, i, "{s->draft}")`, because generic inference fails on
+  field-access arguments. Calls, variables, literals and arithmetic use the
+  typed `rz_html_put`. Same output either way.
+- **Events:** `on:click/input/change/submit` exist. A bare variant whose
+  payload is a string takes the input's value (on submit, the form's first
+  named field). The client keeps the focused input's text while you type, and
+  takes the server's values right after a submit, so forms clear.
+- **Diagnostics:** rzpp errors are `file:line: message` (`tests/fixtures/rzpp`).
+  Generated code sits on the literal's first line, so a Mettle type error
+  inside a hole points at the `return html"""` line, not the exact hole line.
+
+Not built yet: pushes from the server without an event (Phoenix's
+`handle_info`, for example a ticker or a database change), keyed lists,
+uploads, multiple Signals sharing one socket (each page joins its own
+topic, which already works), and the compiler-native `html"""` literal.

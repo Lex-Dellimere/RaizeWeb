@@ -61,6 +61,26 @@ Nice to have, later:
   written.
 - `json"""..."""` and `css"""..."""` become libraries, not compiler work.
 
+## Compiler limits found while building the stopgap (dev compiler da1753da)
+
+Each was worked around in raize; all are small repros.
+
+1. Generic inference fails on field-access arguments:
+   `fn put<T: Tr>(h: H*, v: T)`, then `put(h, s->n)` or `put(h, st.name)` gives
+   E0003 "Nothing in this call says what 'T' is". Bare variables, literals,
+   calls and `s->n + 0` infer fine. `put<typeof(s->n)>(...)` does not parse.
+2. A lambda inside a generic function cannot see the type parameters:
+   `fn f<S>() { var g: Fn(rawptr) -> int32 = fn(p: rawptr) -> int32 { var x: S* = (S*)p; ... }; }`
+   gives "Undefined type 'S'". `&generic_fn<S, M>` does not parse either.
+3. Codegen ICE `call_indirect_unsupported` ("Direct object backend cannot
+   compile function"):
+   - an indirect call whose argument is a string literal: `dp->handle(st, "Add")`
+     fails, while `var ev: string = "Add"; dp->handle(st, ev)` works;
+   - an indirect call through a pointer cast from `rawptr`, and one passing a
+     tagged enum by value.
+4. Minor: `fn(A) -> R` in a parameter mismatch reports "expected 'function',
+   found 'function'"; printing both signatures would help a lot.
+
 ## Until then
 
 raize runs a preprocessor (an mbuild step) that does the same rewrite, so

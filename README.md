@@ -24,11 +24,14 @@ framework/
 ├── poll/        epoll event loop + cross-thread mailbox (Linux x86-64, syscall)
 ├── hub/         WebSocket routes: upgrade on a worker, serve on one loop thread
 ├── channel/     Phoenix channels: v2 wire format, topics, join/handle_in/leave
+├── signal/      Signals: rendered trees, diffs, the page shell, signal.js
 ├── orm/         storage vtable, unit of work, migrations hook (no database)
 ├── config/      env + config, validated at startup, immutable after
 └── str/         the base layer: string views, owned copies, buffers, splitting
 examples/tasks/  a complete example: template, JSON API, static files
 examples/chat/   Phoenix-style channels: rooms, broadcast, a browser client
+examples/todos/  a Signal: typed state + messages, html""" views, live diffs
+tools/rzpp/      the html""" preprocessor (written in Mettle)
 tests/           lint.sh, integration/*.sh, unit/*.mettle, fixtures/
 docs/            architecture review and design notes
 notes/           the Mettle language study this was built on
@@ -135,9 +138,19 @@ on :8090. `make chat-test` runs 22 protocol checks
 (join/refuse/unmatched, replies, push, room-isolated broadcast, a broadcast
 posted from another thread, leave, cleanup on disconnect, 30-member rooms).
 
-Next: Signals (`RzSignal`: views written as `html"""..."""` Mettle literals,
-rendered as statics/dynamics with diffs over a
-channel). See `docs/design/views.md`.
+**Signals** are real-time pages written as Mettle: a state struct, a message
+enum, `update`, and a `view` that returns an `html"""..."""` literal whose `{}`
+holes, loops, branches, components and `on:event={Msg(...)}` handlers are
+all Mettle. `tools/rzpp` compiles the literals (until the compiler has tagged
+literals), the server sends Phoenix-format diffs, and `framework/signal/
+signal.js` patches the DOM. `examples/todos` is a complete one:
+
+```bash
+make build/todos && ./build/todos 8070    # open http://127.0.0.1:8070/todos
+make signal-test                          # rzpp diagnostics + 21 protocol checks
+```
+
+See `docs/design/views.md`.
 
 `framework/poll` and `framework/hub` are a bridge: the epoll loop and the hub
 thread will be replaced by the BEAM/OTP-style Mettle runtime. App code uses
