@@ -1,0 +1,108 @@
+// tests/fixtures/app/web — guards, cookies, forms, peer address, static files,
+// middleware order and a timer, through rz_run (P3-A; A10, A11, A12).
+// Driven by test.sh; default port 8079.
+
+import "raize";
+
+struct WebUser { name: string; }
+
+var g_ann: WebUser;          // the one signed-in user; set by web_app, read-only afterwards
+var g_ticks: int32 = 0;      // rz_every calls (atomic)
+
+// Lets /app/* through only with the session cookie; otherwise redirects to /login.
+fn web_signed_in(ctx: RzContext*) -> int32 {
+  if (!rz_str_eq(rz_ctx_cookie(ctx, "sid"), "s3cret")) { return rz_ctx_redirect(ctx, 303, "/login"); }
+  rz_ctx_set_user(ctx, (rawptr)&g_ann);
+  return RZ_OK;
+}
+
+// Global middleware: tags every response, so the tests see it ran before the guard.
+fn web_tag(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int32 {
+  rz_ctx_set_header(ctx, "X-Mw", "1");
+  return next(ctx);
+}
+
+fn web_home(ctx: RzContext*) -> int32 {
+  var u: WebUser* = (WebUser*)rz_ctx_user(ctx);
+  if (u == 0) { return rz_ctx_text(ctx, 200, "hello nobody (the guard did not run)\n"); }
+  return rz_ctx_text(ctx, 200, "hello {u->name}\n");
+}
+
+// A socket route under the guarded prefix: an upgrade request reaches it only
+// after the guard let it through.
+fn web_socket(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "upgrade handler ran\n");
+}
+
+// What a socket opened from this request would keep (RzConn, A9).
+fn web_conn(ctx: RzContext*) -> int32 {
+  var c: RzConn* = rz__conn_from_ctx(ctx);
+  var u: WebUser* = (WebUser*)rz_conn_user(c);
+  var who: string = "none";
+  if (u != 0) { who = u->name; }
+  var out: string = rz_str_dup("theme={rz_conn_cookie(c, "theme")} peer={rz_conn_peer(c)} user={who}\n");
+  rz__conn_free(c);
+  var rc: int32 = rz_ctx_text(ctx, 200, out);
+  rz_str_free(out);
+  return rc;
+}
+
+fn web_login(ctx: RzContext*) -> int32 {
+  var o: RzCookie = rz_cookie_defaults();
+  o.max_age_s = 3600;
+  if (rz_ctx_set_cookie(ctx, "sid", "s3cret", o) != RZ_OK) { return rz_ctx_text(ctx, 500, "sid refused\n"); }
+  if (rz_ctx_set_cookie(ctx, "theme", "dark", rz_cookie_defaults()) != RZ_OK) { return rz_ctx_text(ctx, 500, "theme refused\n"); }
+  if (rz_ctx_set_cookie(ctx, "bad", "a;b", o) != RZ_E_INVALID) { return rz_ctx_text(ctx, 500, "bad value accepted\n"); }
+  return rz_ctx_text(ctx, 200, "signed in\n");
+}
+
+fn web_logout(ctx: RzContext*) -> int32 {
+  rz_ctx_clear_cookie(ctx, "sid");
+  return rz_ctx_text(ctx, 200, "signed out\n");
+}
+
+fn web_login_page(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "please sign in\n");
+}
+
+fn web_form(ctx: RzContext*) -> int32 {
+  var name: string = rz_str_empty();
+  var note: string = rz_str_empty();
+  var missing: string = rz_str_empty();
+  var got_name: bool = rz_ctx_form(ctx, "name", &name);
+  rz_ctx_form(ctx, "note", &note);
+  var got_missing: bool = rz_ctx_form(ctx, "missing", &missing);
+  return rz_ctx_text(ctx, 200, "name=[{name}] note=[{note}] has_name={got_name} has_missing={got_missing}\n");
+}
+
+fn web_peer(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "{rz_ctx_peer(ctx)}\n");
+}
+
+fn web_ticks(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "{atomic_compare_exchange_i32(&g_ticks, 0, 0)}\n");
+}
+
+fn web_tick(n: int64) { atomic_inc_i32(&g_ticks); }
+
+fn web_app(app: RzApp*) {
+  g_ann.name = "ann";
+  rz_default(app, "port", "8079");
+  rz_use(app, "tag", &web_tag);
+  rz_use_headers(app, "X-Content-Type-Options", "nosniff");
+  rz_use_cors(app, "*");
+  rz_static(app, "/static", "tests/fixtures/app/web/public");
+  rz_guard(app, "/app", &web_signed_in);
+  rz_get(app, "/app/home", &web_home);
+  rz_get(app, "/app/socket", &web_socket);
+  rz_get(app, "/app/conn", &web_conn);
+  rz_get(app, "/login", &web_login_page);
+  rz_post(app, "/login", &web_login);
+  rz_post(app, "/logout", &web_logout);
+  rz_post(app, "/form", &web_form);
+  rz_get(app, "/peer", &web_peer);
+  rz_get(app, "/ticks", &web_ticks);
+  rz_every(app, 50, &web_tick);
+}
+
+fn main() -> int32 { return rz_run("web", &web_app); }

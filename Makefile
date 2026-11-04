@@ -57,10 +57,10 @@ test: lint
 smoke: $(BUILD)/tasks
 	./tests/integration/tasks.sh $(BUILD)/tasks $(PORT)
 
-tasks-test: $(BUILD)/tasks
+tasks-test: $(BUILD)/tasks $(BUILD)/startup
 	./tests/integration/tasks.sh $(BUILD)/tasks 8081
 	./tests/integration/leak.sh $(BUILD)/tasks 8081 2000
-	./tests/integration/config.sh $(BUILD)/tasks 8082
+	./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
 
 # Fixture apps (tests/fixtures/app/*/test.sh), debug; apps-release builds --release.
 apps: $(BUILD)/rzpp $(addprefix $(BUILD)/,$(FIXTURE_APPS))
@@ -74,7 +74,7 @@ integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/todos $(BUILD)/ws_echo $
 	./tests/integration/tasks.sh $(BUILD)/tasks 8080
 	./tests/integration/http_edges.sh $(BUILD)/tasks 8080
 	./tests/integration/leak.sh $(BUILD)/tasks 8080 2000
-	./tests/integration/config.sh $(BUILD)/tasks 8082
+	./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
 	./tests/integration/ws.sh $(BUILD)/ws_echo 8095
 	./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
 	./tests/integration/chat.sh $(BUILD)/chat 8090

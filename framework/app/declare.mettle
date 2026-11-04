@@ -42,15 +42,15 @@ export fn rz_route(app: RzApp*, verb: string, pattern: string, handler: fn(RzCon
     rz__app_error(app, "route {verb} \"{pattern}\" does not start with / — write the full path, e.g. \"/{pattern}\"");
     return;
   }
-  if (app->nroutes >= RZ__APP_MAX_ROUTES) {
+  if (app->state->nroutes >= RZ__APP_MAX_ROUTES) {
     rz__app_error(app, "route {verb} {pattern}: more than {RZ__APP_MAX_ROUTES} routes — mount fewer routes");
     return;
   }
-  var r: Rz_Route* = &app->routes[app->nroutes];
+  var r: Rz_Route* = &app->state->routes[app->state->nroutes];
   r->verb = rz_str_dup(verb);
   r->path = rz_str_dup(pattern);
   r->handler = handler;
-  app->nroutes = app->nroutes + 1;
+  app->state->nroutes = app->state->nroutes + 1;
 }
 
 /// Declares a GET route (see rz_route).
@@ -77,6 +77,42 @@ export fn rz_post(app: RzApp*, pattern: string, handler: fn(RzContext*) -> int32
   rz_route(app, "POST", pattern, handler);
 }
 
+/// Declares a PUT route (see rz_route).
+///
+/// in:      app the app; pattern the path pattern (copied); handler returns its status
+/// returns: nothing; mistakes are reported by rz_run
+/// owns:    nothing kept from the caller
+/// thread:  the declaration function only
+/// example:
+///   rz_put(app, "/tasks/:id", &replace_task);
+export fn rz_put(app: RzApp*, pattern: string, handler: fn(RzContext*) -> int32) {
+  rz_route(app, "PUT", pattern, handler);
+}
+
+/// Declares a PATCH route (see rz_route).
+///
+/// in:      app the app; pattern the path pattern (copied); handler returns its status
+/// returns: nothing; mistakes are reported by rz_run
+/// owns:    nothing kept from the caller
+/// thread:  the declaration function only
+/// example:
+///   rz_patch(app, "/tasks/:id", &edit_task);
+export fn rz_patch(app: RzApp*, pattern: string, handler: fn(RzContext*) -> int32) {
+  rz_route(app, "PATCH", pattern, handler);
+}
+
+/// Declares a DELETE route (see rz_route).
+///
+/// in:      app the app; pattern the path pattern (copied); handler returns its status
+/// returns: nothing; mistakes are reported by rz_run
+/// owns:    nothing kept from the caller
+/// thread:  the declaration function only
+/// example:
+///   rz_delete(app, "/tasks/:id", &delete_task);
+export fn rz_delete(app: RzApp*, pattern: string, handler: fn(RzContext*) -> int32) {
+  rz_route(app, "DELETE", pattern, handler);
+}
+
 /// Sets a configuration default. Precedence: framework default < rz_default <
 /// RAIZE_<KEY> environment variable < --port N. Keys are the environment names
 /// without RAIZE_, lowercase ("port", "workers", "max_body_bytes").
@@ -91,13 +127,13 @@ export fn rz_post(app: RzApp*, pattern: string, handler: fn(RzContext*) -> int32
 ///   rz_default(app, "port", "8075");
 export fn rz_default(app: RzApp*, key: string, value: string) {
   if (app == 0) { return; }
-  if (app->ndefaults >= RZ__APP_MAX_DEFAULTS) {
+  if (app->state->ndefaults >= RZ__APP_MAX_DEFAULTS) {
     rz__app_error(app, "rz_default(\"{key}\"): more than {RZ__APP_MAX_DEFAULTS} defaults — set fewer");
     return;
   }
-  app->defaults[app->ndefaults].key = rz_str_dup(key);
-  app->defaults[app->ndefaults].value = rz_str_dup(value);
-  app->ndefaults = app->ndefaults + 1;
+  app->state->defaults[app->state->ndefaults].key = rz_str_dup(key);
+  app->state->defaults[app->state->ndefaults].value = rz_str_dup(value);
+  app->state->ndefaults = app->state->ndefaults + 1;
 }
 
 /// Makes an in-memory data layer that the app owns and frees when rz_run returns.
@@ -112,7 +148,7 @@ export fn rz_default(app: RzApp*, key: string, value: string) {
 ///   g_tasks = rz_mem_layer(app, task_resource(), 64);
 export fn rz_mem_layer(app: RzApp*, def: RzResourceDef*, capacity: int32) -> RzDataLayer* {
   if (app == 0) { return 0; }
-  if (app->nlayers >= RZ__APP_MAX_LAYERS) {
+  if (app->state->nlayers >= RZ__APP_MAX_LAYERS) {
     rz__app_error(app, "rz_mem_layer: more than {RZ__APP_MAX_LAYERS} app layers — share a layer or make fewer");
     return 0;
   }
@@ -121,8 +157,8 @@ export fn rz_mem_layer(app: RzApp*, def: RzResourceDef*, capacity: int32) -> RzD
     rz__app_error(app, "rz_mem_layer: cannot make a memory layer of capacity {capacity} — pass a built resource and a capacity 1..1000000");
     return 0;
   }
-  app->layers[app->nlayers] = (rawptr)dl;
-  app->nlayers = app->nlayers + 1;
+  app->state->layers[app->state->nlayers] = (rawptr)dl;
+  app->state->nlayers = app->state->nlayers + 1;
   return dl;
 }
 
@@ -148,18 +184,18 @@ export fn rz__app_api(app: RzApp*, base: string, dl: RzDataLayer*, def: RzResour
     rz__app_error(app, "json api \"{base}\": the base must start with / and not end with / — e.g. \"/api/{def->name}s\"");
     return RZ_E_INVALID;
   }
-  for i in 0..app->napis {
-    if (app->apis[i] == (rawptr)def) {
+  for i in 0..app->state->napis {
+    if (app->state->apis[i] == (rawptr)def) {
       rz__app_error(app, "json api {base}: {def->name}_json_api is mounted twice — mount each resource once");
       return RZ_E_INVALID;
     }
   }
-  if (app->napis >= RZ__APP_MAX_LAYERS) {
+  if (app->state->napis >= RZ__APP_MAX_LAYERS) {
     rz__app_error(app, "json api {base}: more than {RZ__APP_MAX_LAYERS} API mounts — mount fewer");
     return RZ_E_INVALID;
   }
-  app->apis[app->napis] = (rawptr)def;
-  app->napis = app->napis + 1;
+  app->state->apis[app->state->napis] = (rawptr)def;
+  app->state->napis = app->state->napis + 1;
   return RZ_OK;
 }
 
@@ -183,17 +219,17 @@ export fn rz__app_route(app: RzApp*, verb: string, base: string, suffix: string,
 /// owns:    copies name, path and head
 export fn rz__app_signal(app: RzApp*, name: string, path: string, head: string, size: int64, mount: fn(rawptr) -> void, handle: fn(rawptr, string, string) -> int32, view: fn(rawptr) -> RzHtml*, leave: fn(rawptr) -> void) {
   if (app == 0) { return; }
-  if (app->nsignals >= RZ__APP_MAX_SIGNALS) {
+  if (app->state->nsignals >= RZ__APP_MAX_SIGNALS) {
     rz__app_error(app, "{name}_signal: more than {RZ__APP_MAX_SIGNALS} Signals — mount fewer");
     return;
   }
-  for i in 0..app->nsignals {
-    if (rz_str_eq(app->signals[i].name, name)) {
+  for i in 0..app->state->nsignals {
+    if (rz_str_eq(app->state->signals[i].name, name)) {
       rz__app_error(app, "{name}_signal(app, \"{path}\"): mounted twice — mount each Signal once");
       return;
     }
   }
-  var m: Rz_SignalMount* = &app->signals[app->nsignals];
+  var m: Rz_SignalMount* = &app->state->signals[app->state->nsignals];
   m->name = rz_str_dup(name);
   m->path = rz_str_dup(path);
   m->head = rz_str_dup(head);
@@ -202,7 +238,7 @@ export fn rz__app_signal(app: RzApp*, name: string, path: string, head: string, 
   m->handle = handle;
   m->view = view;
   m->leave = leave;
-  app->nsignals = app->nsignals + 1;
+  app->state->nsignals = app->state->nsignals + 1;
   rz_route(app, "GET", path, &rz__app_signal_page);
 }
 
@@ -213,9 +249,9 @@ export fn rz__app_signal(app: RzApp*, name: string, path: string, head: string, 
 /// owns:    nothing
 export fn rz__app_signal_page(ctx: RzContext*) -> int32 {
   var app: RzApp* = g_app;
-  for i in 0..app->nsignals {
-    if (rz_str_eq(app->signals[i].path, ctx->req->path)) {
-      return rz_signal_page(ctx, app->signals[i].name, app->signals[i].head);
+  for i in 0..app->state->nsignals {
+    if (rz_str_eq(app->state->signals[i].path, ctx->req->path)) {
+      return rz_signal_page(ctx, app->state->signals[i].name, app->state->signals[i].head);
     }
   }
   return rz_ctx_not_found(ctx);

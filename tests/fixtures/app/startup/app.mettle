@@ -1,0 +1,44 @@
+// tests/fixtures/app/startup — rz_run's startup contract (D2, A4): config
+// precedence, every error printed as "<app>: <what> — <fix>", exit codes 0/1/2,
+// and SIGTERM/SIGINT as a clean stop. Driven by test.sh; default port 8077.
+// `--bad-decls` on the command line makes the declaration function err twice.
+
+import "std/io";
+import "raize";
+
+// True when `flag` is one of this process's arguments (/proc/self/cmdline, as rz_run reads --port).
+fn startup_has_flag(flag: string) -> bool {
+  var fp: cstring = fopen("/proc/self/cmdline", "rb");
+  if (fp == 0) { return false; }
+  var buf: uint8[1024];
+  var n: int64 = fread((cstring)&buf[0], 1, 1024, fp);
+  fclose(fp);
+  var start: int64 = 0;
+  for i in 0..n {
+    if (buf[i] == 0) {
+      if (rz_str_eq(rz_str_view(&buf[start], i - start), flag)) { return true; }
+      start = i + 1;
+    }
+  }
+  return false;
+}
+
+fn startup_ok(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "ok\n");
+}
+
+fn startup_tick(n: int64) { }
+
+fn startup_app(app: RzApp*) {
+  rz_default(app, "port", "8077");
+  rz_get(app, "/", &startup_ok);
+  if (startup_has_flag("--bad-decls")) {
+    rz_get(app, "healthz", &startup_ok);          // no leading slash
+    rz_every(app, 0, &startup_tick);              // no period
+  }
+  if (startup_has_flag("--bad-static")) {
+    rz_static(app, "/static", "tests/fixtures/app/startup/no-such-dir");
+  }
+}
+
+fn main() -> int32 { return rz_run("startup", &startup_app); }
