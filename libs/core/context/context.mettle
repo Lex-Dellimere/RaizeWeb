@@ -51,6 +51,7 @@ export struct RzContext {
   aborted: bool;          // a middleware refused: do not call the handler
   upgrade: RzUpgrade*;    // set by an upgrading handler, else 0
   peer: uint32;           // the socket's IPv4 address, bytes a.b.c.d in memory order; 0 unknown
+  session: rawptr;        // raize_session's per-request state while its middleware runs, else 0
 }
 
 // Binds a context to a request/response pair. `resp->arena` is set here, once,
@@ -67,6 +68,7 @@ export fn rz_ctx_init(ctx: RzContext*, req: RzRequest*, resp: RzResponse*, arena
   ctx->aborted = false;
   ctx->upgrade = 0;
   ctx->peer = 0;
+  ctx->session = 0;
   if (resp != 0) {
     resp->arena = arena;
   }

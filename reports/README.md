@@ -29,7 +29,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [017](017-compiler-match-plain-enum.md) | compiler | Mettle compiler | low | `match` rejects plain (payload-less) enums, so a message enum needs at least one payload | worked around: rzpp reports a payload-less `<T>Msg` as an error (DECISIONS A1) |
 | [018](018-compiler-fn-type-mismatch-message.md) | compiler | Mettle compiler | low | A function-type mismatch reports "expected 'function', found 'function'" | open; printing both signatures would help |
 | [019](019-library-split.md) | missing | raize_web | high | raize is one package; it must become a framework of several libraries | open; next design step D8 (user direction 2026-11-04, AC S7) |
-| [020](020-session-library.md) | missing | raize_web | high | No session handler library (cookies, session store and expiry, signed/hashed tokens, CSRF, flash) | open; part of D8 (user direction 2026-11-04) |
+| [020](020-session-library.md) | missing | raize_web | high | No session handler library (cookies, session store and expiry, signed/hashed tokens, CSRF, flash) | fixed (libs/session, `raize_session`) |
 | [021](021-auth-library.md) | missing | raize_web | high | No auth library (KDF password hashing, sign-up/login/logout flows, guards, lockout) | open; part of D8 (user direction 2026-11-04) |
 | [022](022-resource-policies.md) | missing | raize_web | medium | Resources have no actor/policies: derived JSON APIs cannot scope records per user | open; after the redesign (DECISIONS A13) |
 | [023](023-mbuild-package.md) | missing | raize_web | medium | raize_web has no mbuild.mettle (library package `raize`, rzpp as its only bin) | open; after P3 / with D8 (library, not a binary) |
@@ -43,6 +43,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | fixed upstream (cryptex 0.2.0 pure Mettle) |
 | [032](032-upgrade-abort-leak.md) | bug | raize_web | low | An upgrade aborted after the handler returns leaks its RzConn and a hub slot | open |
 | [033](033-compiler-exportless-import-visibility.md) | compiler | Mettle compiler | low | An export-less module imported first through another module is invisible to a later direct importer | open; worked around by exporting shared helpers |
+| [034](034-session-library-gaps.md) | limitation | session | low | `session` has no subject change and no read-only lookup: raize sessions share one subject, `rz_conn_session_get` consumes pending flash | open; asks for the session library |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its

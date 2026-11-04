@@ -21,6 +21,8 @@ libs/core/        package `raize_core`: str, core/status, context, router, serve
 libs/realtime/    package `raize_realtime`: ws, hub, channel
 libs/signal/      package `raize_signal`: Signals, html views, diffs, signal.js
 libs/resource/    package `raize_resource`: resources, memory layer, JSON API
+libs/session/     package `raize_session` (opt-in): cookie sessions, CSRF guard, flash,
+                  rz_conn_session_get, over the `session` library (app supplies the store)
 examples/         tasks (JSON API + template), chat (channels), todos (Signal)
 tests/            lint.sh, integration/*.sh, unit/*.mettle, fixtures/
 docs/             handoff, design notes, SPLIT-imports.tsv (old -> new import paths)
@@ -28,7 +30,9 @@ docs/             handoff, design notes, SPLIT-imports.tsv (old -> new import pa
 
 Each package has its own `mbuild.mettle`; dependencies are one-way:
 `raize_core` <- `raize_realtime` <- `raize_signal`, `raize_core` <- `raize_resource`,
-and the `raize` umbrella depends on all four. Inside a package, imports are relative;
+and the `raize` umbrella depends on all four. `raize_session` depends on `raize`,
+`raize_core` and `session` (which brings `crypto`); the umbrella does not depend on it,
+so apps opt in with `import "raize_session/raize_session"`. Inside a package, imports are relative;
 across packages they use the package name, e.g. `import "raize_core/context/context"`.
 
 ## Build and run

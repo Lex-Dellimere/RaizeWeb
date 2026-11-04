@@ -5,5 +5,9 @@ raize_realtime=./libs/realtime
 raize_signal=./libs/signal
 raize_resource=./libs/resource
 raize=.
-mbuild=./.mbuild/api/mbuild
 # <<< mbuild
+# Outside the mbuild block (the umbrella does not depend on them): raize_session and
+# what it builds on, for apps that opt in to sessions.
+raize_session=./libs/session
+session=../session/src
+crypto=../cryptex/src

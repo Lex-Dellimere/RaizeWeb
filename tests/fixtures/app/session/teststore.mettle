@@ -1,0 +1,113 @@
+// TEST-ONLY SesStore for tests/fixtures/app/session: a fixed table of records behind
+// one mutex, so worker threads, the hub thread and the timer thread can share it.
+// raize ships no store (sessions live in the app's database); this file is not part
+// of any package and is never exported.
+
+import "std/mem";
+import "std/thread";
+import "session/session";
+
+const FX_CAP: int32 = 256;
+
+export struct FxStore {
+  recs: SesRecord*;   // FX_CAP records
+  used: bool*;        // FX_CAP flags
+  lock: int64;        // mutex
+}
+
+var g_fx: FxStore;
+
+fn fx_find(t: FxStore*, hash: uint8*) -> int32 {
+  for i in 0..FX_CAP {
+    if (t->used[i] && memcmp((rawptr)&t->recs[i].hash[0], (rawptr)hash, 32) == 0) { return i; }
+  }
+  return -1;
+}
+
+fn fx_put(ctx: rawptr, r: SesRecord*) -> int32 {
+  var t: FxStore* = (FxStore*)ctx;
+  mutex_lock_infinite(t->lock);
+  var i: int32 = fx_find(t, &r->hash[0]);
+  if (i < 0) {
+    for j in 0..FX_CAP {
+      if (i < 0 && !t->used[j]) { i = j; }
+    }
+  }
+  var rc: int32 = SES_E_LIMIT;
+  if (i >= 0) {
+    t->recs[i] = *r;
+    t->used[i] = true;
+    rc = SES_OK;
+  }
+  mutex_unlock(t->lock);
+  return rc;
+}
+
+fn fx_get(ctx: rawptr, hash: uint8*, out: SesRecord*) -> int32 {
+  var t: FxStore* = (FxStore*)ctx;
+  mutex_lock_infinite(t->lock);
+  var i: int32 = fx_find(t, hash);
+  var rc: int32 = SES_E_NOT_FOUND;
+  if (i >= 0) {
+    *out = t->recs[i];
+    rc = SES_OK;
+  }
+  mutex_unlock(t->lock);
+  return rc;
+}
+
+fn fx_del(ctx: rawptr, hash: uint8*) -> int32 {
+  var t: FxStore* = (FxStore*)ctx;
+  mutex_lock_infinite(t->lock);
+  var i: int32 = fx_find(t, hash);
+  var rc: int32 = SES_E_NOT_FOUND;
+  if (i >= 0) {
+    t->used[i] = false;
+    rc = SES_OK;
+  }
+  mutex_unlock(t->lock);
+  return rc;
+}
+
+fn fx_del_subject(ctx: rawptr, subject: string) -> int32 {
+  var t: FxStore* = (FxStore*)ctx;
+  mutex_lock_infinite(t->lock);
+  var n: int32 = 0;
+  for i in 0..FX_CAP {
+    if (t->used[i] && ses_record_subject(&t->recs[i]) == subject) {
+      t->used[i] = false;
+      n = n + 1;
+    }
+  }
+  mutex_unlock(t->lock);
+  return n;
+}
+
+fn fx_prune(ctx: rawptr, before: int64) -> int32 {
+  var t: FxStore* = (FxStore*)ctx;
+  mutex_lock_infinite(t->lock);
+  var n: int32 = 0;
+  for i in 0..FX_CAP {
+    if (t->used[i] && (t->recs[i].revoked != 0 || t->recs[i].expires <= before)) {
+      t->used[i] = false;
+      n = n + 1;
+    }
+  }
+  mutex_unlock(t->lock);
+  return n;
+}
+
+// Fills `s` with the process's test store (created on first use, never freed).
+export fn fx_store_bind(s: SesStore*) {
+  if (g_fx.recs == 0) {
+    g_fx.recs = (SesRecord*)calloc((int64)FX_CAP, sizeof(SesRecord));
+    g_fx.used = (bool*)calloc((int64)FX_CAP, 1);
+    g_fx.lock = mutex_create();
+  }
+  s->ctx = (rawptr)&g_fx;
+  s->put = &fx_put;
+  s->get = &fx_get;
+  s->del = &fx_del;
+  s->del_subject = &fx_del_subject;
+  s->prune = &fx_prune;
+}

@@ -1,0 +1,90 @@
+// tests/fixtures/app/session — raize_session end to end (reports/020): cookie
+// sessions over a test-only thread-safe SesStore (teststore.mettle), rotation on
+// login, logout, idle expiry, the CSRF guard with an exempt prefix, flash, and a
+// Signal mount reading the session. Driven by test.sh and client.py; default port 8076.
+//
+//   GET  /         user, a flash notice (taken once) and the CSRF token; creates a session
+//   GET  /peek     user and whether a session is present; never creates one
+//   POST /login    user=<name>: stores it, rotates the id, queues "welcome <name>"
+//   POST /logout   drops the session
+//   POST /echo     "ok" (behind the CSRF guard like every unsafe method)
+//   POST /api/ping "pong": /api is CSRF-exempt
+//   GET  /me       Signal whoami: its 2-arg mount reads the session's user
+
+import "raize";
+import "raize_session/raize_session";
+import "teststore";
+
+var g_store: SesStore;
+
+fn home(ctx: RzContext*) -> int32 {
+  var u: string = rz_session_get(ctx, "user");
+  var f: string = rz_flash_take(ctx, "notice");
+  var again: string = rz_flash_take(ctx, "notice");
+  var t: string = rz_csrf_token(ctx);
+  return rz_ctx_text(ctx, 200, "user={u}\nflash={f}\nagain={again}\ncsrf={t}\n");
+}
+
+fn peek(ctx: RzContext*) -> int32 {
+  var u: string = rz_session_get(ctx, "user");
+  var p: string = "no";
+  if (rz_session_id_present(ctx)) { p = "yes"; }
+  return rz_ctx_text(ctx, 200, "user={u}\npresent={p}\n");
+}
+
+fn login(ctx: RzContext*) -> int32 {
+  var name: string = rz_str_empty();
+  if (!rz_ctx_form(ctx, "user", &name) || name.length == 0) { return rz_ctx_text(ctx, 400, "user?\n"); }
+  if (rz_session_put(ctx, "user", name) != RZ_OK) { return rz_ctx_text(ctx, 500, "put failed\n"); }
+  if (rz_session_rotate(ctx) != RZ_OK) { return rz_ctx_text(ctx, 500, "rotate failed\n"); }
+  rz_flash_put(ctx, "notice", "welcome {name}");
+  return rz_ctx_redirect(ctx, 303, "/");
+}
+
+fn logout(ctx: RzContext*) -> int32 {
+  rz_session_drop(ctx);
+  return rz_ctx_text(ctx, 200, "bye\n");
+}
+
+fn echo(ctx: RzContext*) -> int32 { return rz_ctx_text(ctx, 200, "ok\n"); }
+fn ping(ctx: RzContext*) -> int32 { return rz_ctx_text(ctx, 200, "pong\n"); }
+
+@signal
+struct Whoami { user: string; n: int32; }
+enum WhoamiMsg { Inc, Set(int32) }
+
+fn whoami_mount(s: Whoami*, c: RzConn*) -> int32 {
+  s->user = rz_conn_session_get(c, "user");
+  s->n = 0;
+  return RZ_OK;
+}
+fn whoami_update(s: Whoami*, msg: WhoamiMsg) {
+  match (msg) { case Inc: { s->n = s->n + 1; } case Set(v): { s->n = v; } }
+}
+fn whoami_view(s: Whoami*) -> RzHtml* {
+  return html"""<p class="user">{s->user}</p><p class="n">{s->n}</p><button on:click={Inc}>+</button>""";
+}
+fn whoami_leave(s: Whoami*) { rz_str_free(s->user); }
+
+fn session_app(app: RzApp*) {
+  rz_default(app, "port", "8076");
+  fx_store_bind(&g_store);
+  var cfg: RzSessionConfig = rz_session_defaults();
+  cfg.cookie = "rz_sid";
+  cfg.idle_s = 3;          // short, so test.sh can wait an idle expiry out
+  cfg.max_age_s = 3600;
+  cfg.secure = false;      // plain-HTTP test server
+  cfg.store = &g_store;
+  rz_use_session(app, cfg);
+  rz_csrf_exempt(app, "/api");
+  rz_get(app, "/", &home);
+  rz_get(app, "/peek", &peek);
+  rz_post(app, "/login", &login);
+  rz_post(app, "/logout", &logout);
+  rz_post(app, "/echo", &echo);
+  rz_delete(app, "/echo", &echo);
+  rz_post(app, "/api/ping", &ping);
+  whoami_signal(app, "/me", "");
+}
+
+fn main() -> int32 { return rz_run("session", &session_app); }

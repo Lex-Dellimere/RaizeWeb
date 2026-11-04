@@ -1,0 +1,19 @@
+import "mbuild/api";
+
+// raize_session: raize sessions: the HTTP binding of the `session` library (cookie,
+// middleware, CSRF guard, flash, Signal reads). Apps opt in; the raize umbrella does
+// not depend on it. Part of raize (https://github.com/Lex-Dellimere/RaizeWeb). Library
+// only, no bins.
+fn project() {
+  mb_package("raize_session", "0.1.0");
+  mb_meta("description", "raize sessions: cookie middleware, CSRF guard, flash and Signal reads over the session library");
+  mb_meta("license", "Apache-2.0");
+}
+
+// Sibling packages by path until raize is published; publish switches these to mb_dep.
+// `session` brings `crypto` (cryptex) transitively.
+fn deps() {
+  mb_dep_path("raize", "../..");
+  mb_dep_path("raize_core", "../core");
+  mb_dep_path("session", "../../../session");
+}
