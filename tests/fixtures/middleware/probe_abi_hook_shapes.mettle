@@ -13,9 +13,9 @@
 //   -> found=1 token=[good] verdict=200 principal=1
 import "std/io";
 import "std/mem";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/middleware/headers";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/middleware/headers";
 
 struct Hooks {
   extract: fn(RzRequest*, string*) -> int32;

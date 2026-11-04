@@ -1,9 +1,9 @@
 // Prints the handshake accept key for the RFC 6455 example, compiled (not
 // interpreted), so codegen and the interpreter can be compared.
 import "std/io";
-import "../../../framework/str/str";
-import "../../../framework/ws/sha1";
-import "../../../framework/ws/handshake";
+import "raize_core/str/str";
+import "raize_realtime/ws/sha1";
+import "raize_realtime/ws/handshake";
 
 fn main() -> int32 {
   var out: uint8[32];

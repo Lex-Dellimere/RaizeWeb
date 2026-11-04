@@ -23,7 +23,7 @@
 // valid during update(); copy it to keep it.
 
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 
 fn rzpp_payload_ok(t: string) -> bool {

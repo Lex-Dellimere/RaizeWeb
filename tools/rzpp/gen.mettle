@@ -21,7 +21,7 @@
 // (docs/design/mettle-tagged-literals-request.md): text in, text out.
 
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 
 export struct RzppNode {

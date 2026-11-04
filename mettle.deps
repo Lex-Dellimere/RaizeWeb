@@ -1,0 +1,9 @@
+# Package roots. mbuild maintains the block below; the Makefile build reads it too.
+# >>> mbuild: generated, edits inside this block are overwritten
+raize_core=./libs/core
+raize_realtime=./libs/realtime
+raize_signal=./libs/signal
+raize_resource=./libs/resource
+raize=.
+mbuild=./.mbuild/api/mbuild
+# <<< mbuild

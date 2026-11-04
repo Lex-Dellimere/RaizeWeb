@@ -15,7 +15,7 @@
 // Every diagnostic is "path:line: what — fix", on the decorator's or field's line.
 
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 import "decl";
 

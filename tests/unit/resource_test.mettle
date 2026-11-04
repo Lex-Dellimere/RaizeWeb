@@ -7,10 +7,10 @@
 // struct's fields, then rz__attr_* / rz__action_*), without rzpp.
 
 import "std/mem";
-import "../../framework/str/str";
-import "../../framework/core/status";
-import "../../framework/context/arena";
-import "../../framework/resource/resource";
+import "raize_core/str/str";
+import "raize_core/core/status";
+import "raize_core/context/arena";
+import "raize_resource/resource";
 
 struct TNote { id: int64; title: string; body: string; n: int32; big: int64; flag: bool; }
 

@@ -27,14 +27,14 @@
 import "std/io";
 import "std/mem";
 import "std/thread";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/server/server";
-import "../../../framework/middleware/chain";
-import "../../../framework/middleware/logging";
-import "../../../framework/middleware/recover";
-import "../../../framework/middleware/cors";
-import "../../../framework/middleware/auth";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/server/server";
+import "raize_core/middleware/chain";
+import "raize_core/middleware/logging";
+import "raize_core/middleware/recover";
+import "raize_core/middleware/cors";
+import "raize_core/middleware/auth";
 
 const APP_ORIGIN: string = "https://app.example";
 const APP_REALM: string = "fixture";

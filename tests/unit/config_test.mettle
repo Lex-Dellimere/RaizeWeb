@@ -8,8 +8,8 @@
 // production provider is exercised by tests/integration/config.sh.
 
 import "std/mem";
-import "../../framework/str/str";
-import "../../framework/config/config";
+import "raize_core/str/str";
+import "raize_core/config/config";
 
 // The config module owns the test table (see env.mettle): the interpreter
 // cannot call getenv and drops string arguments

@@ -5,9 +5,9 @@
 //   -> scheme=[Bearer] token=[abc] code=0 (exit 0)
 import "std/io";
 import "std/mem";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/middleware/auth";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/middleware/auth";
 
 fn main() -> int32 {
   var arena: RzArena* = rz_arena_new();

@@ -1,6 +1,6 @@
 // tools/rzpp/decl — a decorated struct as deco.mettle parsed it, for the generators.
 
-import "../../framework/str/str";
+import "raize_core/str/str";
 
 export struct RzppDeco {
   name: string;        // "max_length"; a view into the source

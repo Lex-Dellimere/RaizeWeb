@@ -8,10 +8,10 @@
 
 import "std/io";
 import "std/mem";
-import "framework/str/str";
-import "framework/core/status";
-import "framework/context/context";
-import "framework/signal/html";
-import "framework/signal/signal";
-import "framework/resource/resource";
-import "framework/app/app";
+import "raize_core/str/str";
+import "raize_core/core/status";
+import "raize_core/context/context";
+import "raize_signal/html";
+import "raize_signal/signal";
+import "raize_resource/resource";
+import "app/app";

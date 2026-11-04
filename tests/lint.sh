@@ -26,14 +26,14 @@ product_lines() {
     }' "$1" | wc -l
 }
 
-for f in $(find framework -name '*.mettle' | sort); do
+for f in $(find app libs -name '*.mettle' -not -path '*/.mbuild/*' -not -name mbuild.mettle | sort); do
   case "$f" in
     *_test.mettle) continue ;;
   esac
   n=$(product_lines "$f")
   # framework/str is the base layer: one module, exempt from the split rule.
   case "$f" in
-    framework/str/*) printf 'ok    %-46s %4s (base layer, exempt)\n' "$f" "$n"; continue ;;
+    libs/core/str/*) printf 'ok    %-46s %4s (base layer, exempt)\n' "$f" "$n"; continue ;;
   esac
   if [ "$n" -gt "$LIMIT" ]; then
     printf 'FAIL  %-46s %4s product lines (limit %s)\n' "$f" "$n" "$LIMIT"

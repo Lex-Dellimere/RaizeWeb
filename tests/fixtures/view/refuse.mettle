@@ -1,8 +1,8 @@
 // A startup-refusal fixture: it loads a broken template and must exit non-zero
 // *before* a socket is opened. Built and run as evidence for template rule 6.
 import "std/io";
-import "framework/str/str";
-import "framework/template/template";
+import "raize_core/str/str";
+import "raize_core/template/template";
 
 fn main() -> int32 {
   var t: RzTemplate* = rz_template_new();

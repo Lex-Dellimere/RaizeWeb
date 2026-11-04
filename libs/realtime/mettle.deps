@@ -1,0 +1,4 @@
+# >>> mbuild: generated, edits inside this block are overwritten
+raize_core=../core
+raize_realtime=.
+# <<< mbuild

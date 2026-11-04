@@ -15,8 +15,8 @@
 // The working alternative (pointer out-parameter, int32 return) is
 // probe_abi_hook_shapes.mettle.
 import "std/io";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
+import "raize_core/str/str";
+import "raize_core/context/context";
 
 fn main() -> int32 {
   println("direct status=[{rz_status_reason(404)}]");

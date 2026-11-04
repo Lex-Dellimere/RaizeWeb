@@ -1,7 +1,7 @@
 // tools/rzpp/src — the preprocessor's state and its small text helpers.
 
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 
 export struct RzppGen {
   src: string;           // the whole source file

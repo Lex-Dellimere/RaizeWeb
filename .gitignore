@@ -6,3 +6,4 @@ t/
 *.out
 *.log
 *.gen.mettle
+.mbuild/

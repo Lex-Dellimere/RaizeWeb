@@ -13,33 +13,23 @@ links is Mettle's, which means no libc, no TLS library, no OpenSSL, and no
 ## Layout
 
 ```
-framework/
-├── server/      listener, worker pool, connection loop, HTTP/1.1 parser
-├── context/     request/response, headers, query, params, json, date, arena
-├── router/      trie router: exact > :param > *wildcard, 405 + Allow, groups
-├── middleware/  request pipeline, logging, limits, CORS, auth hook
-├── template/    HTML/text renderer with escaping and sections
-├── static/      file serving: mime types, ETag/304, traversal-safe
-├── ws/          WebSocket protocol: handshake, frames, UTF-8, connection state
-├── poll/        epoll event loop + cross-thread mailbox (Linux x86-64, syscall)
-├── hub/         WebSocket routes: upgrade on a worker, serve on one loop thread
-├── channel/     Phoenix channels: v2 wire format, topics, join/handle_in/leave
-├── signal/      Signals: rendered trees, diffs, the page shell, signal.js
-├── orm/         storage vtable, unit of work, migrations hook (no database)
-├── config/      env + config, validated at startup, immutable after
-└── str/         the base layer: string views, owned copies, buffers, splitting
-examples/tasks/  a complete example: template, JSON API, static files
-examples/chat/   Phoenix-style channels: rooms, broadcast, a browser client
-examples/todos/  a Signal: typed state + messages, html""" views, live diffs
-tools/rzpp/      the html""" preprocessor (written in Mettle)
-tests/           lint.sh, integration/*.sh, unit/*.mettle, fixtures/
-docs/            architecture review and design notes
-notes/           the Mettle language study this was built on
+raize.mettle      umbrella facade: `import "raize/raize"` (package `raize`, repo root)
+app/              rz_run, declarations, rz_use, rz_every (package `raize`)
+tools/rzpp/       the html""" / @resource / @signal preprocessor, raize's only bin
+libs/core/        package `raize_core`: str, core/status, context, router, server,
+                  poll, middleware, config, static, template
+libs/realtime/    package `raize_realtime`: ws, hub, channel
+libs/signal/      package `raize_signal`: Signals, html views, diffs, signal.js
+libs/resource/    package `raize_resource`: resources, memory layer, JSON API
+examples/         tasks (JSON API + template), chat (channels), todos (Signal)
+tests/            lint.sh, integration/*.sh, unit/*.mettle, fixtures/
+docs/             handoff, design notes, SPLIT-imports.tsv (old -> new import paths)
 ```
 
-Dependency direction is one-way: `context` imports only `framework/str/str` and
-the Mettle standard library; nothing else may be imported by it. See
-`docs/architecture-review.md` for the full rules and the Phase 1 contract.
+Each package has its own `mbuild.mettle`; dependencies are one-way:
+`raize_core` <- `raize_realtime` <- `raize_signal`, `raize_core` <- `raize_resource`,
+and the `raize` umbrella depends on all four. Inside a package, imports are relative;
+across packages they use the package name, e.g. `import "raize_core/context/context"`.
 
 ## Build and run
 
@@ -111,7 +101,7 @@ Does not promise, because Mettle cannot:
 - DNS. Bind by address.
 - HTTP/2, chunked request bodies, or `Expect: 100-continue` beyond the
   documented answer.
-- An event loop off Linux x86-64. `framework/poll` uses raw x86-64 syscall
+- An event loop off Linux x86-64. `libs/core/poll` uses raw x86-64 syscall
   numbers through the dev compiler's `syscall` builtin; the blocking HTTP
   server works everywhere.
 - Catching a fault. A hardware fault is a process death in Mettle; the
@@ -123,15 +113,15 @@ Does not promise, because Mettle cannot:
 WebSockets, channels and Signals (real-time pages, after Phoenix LiveView),
 following Phoenix's model and wire protocol:
 see `docs/design/realtime.md`. Done so far: the WebSocket protocol
-(`framework/ws`, interpreter-tested) and the epoll loop (`framework/poll`),
+(`libs/realtime/ws`, interpreter-tested) and the epoll loop (`libs/core/poll`),
 proven together by `make ws-test` (18 checks over real sockets: echo,
 fragments, ping, close codes 1002/1007/1009, a cross-thread broadcast, 50
-concurrent clients). `framework/hub` mounts WebSockets on the real server: a
+concurrent clients). `libs/realtime/hub` mounts WebSockets on the real server: a
 route calls `rz_hub_upgrade`, the worker writes the 101 and hands the socket
 to the hub thread, and goes back to accept(). `make hub-test` runs the same 18
 checks through the router with 4 workers, plus plain HTTP on the same port.
 
-`framework/channel` is Phoenix channels on the hub, speaking Phoenix's v2
+`libs/realtime/channel` is Phoenix channels on the hub, speaking Phoenix's v2
 wire format (`[join_ref, ref, topic, event, payload]`), so phoenix.js is a
 valid client. `examples/chat` uses it: `./build/chat 8090` serves a chat page
 on :8090. `make chat-test` runs 22 protocol checks
@@ -142,7 +132,7 @@ posted from another thread, leave, cleanup on disconnect, 30-member rooms).
 enum, `update`, and a `view` that returns an `html"""..."""` literal whose `{}`
 holes, loops, branches, components and `on:event={Msg(...)}` handlers are
 all Mettle. `tools/rzpp` compiles the literals (until the compiler has tagged
-literals), the server sends Phoenix-format diffs, and `framework/signal/
+literals), the server sends Phoenix-format diffs, and `libs/signal/
 signal.js` patches the DOM. The server can push too: a message published
 with the generated `TodosMsg__publish("topic", Tick(n))`, from any thread,
 goes through the same `update` on every page subscribed to that topic. `examples/todos` is a complete one:
@@ -154,7 +144,7 @@ make signal-test                          # rzpp diagnostics + 27 protocol check
 
 See `docs/design/views.md`.
 
-`framework/poll` and `framework/hub` are a bridge: the epoll loop and the hub
+`libs/core/poll` and `libs/realtime/hub` are a bridge: the epoll loop and the hub
 thread will be replaced by the BEAM/OTP-style Mettle runtime. App code uses
 only the channel and Signal APIs, so it does not change when that happens.
 
@@ -173,7 +163,7 @@ All five phases are in, gated end to end:
 Verified numbers (see `reports/status.md` for transcripts):
 
 ```
-framework/      45 modules, 13 152 lines, LINT OK (<=400 product lines/file)
+app/ + libs/    45 modules, 13 152 lines, LINT OK (<=400 product lines/file)
 unit            139 @test assertions across 22 files
 integration     SMOKE OK 7/7 · EDGES OK 11/11 · SITE OK 16/16
                 LEAK OK 2 000 requests, 0 kB growth (both apps)

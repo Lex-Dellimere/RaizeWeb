@@ -13,12 +13,12 @@
 import "std/io";
 import "std/mem";
 import "std/thread";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/router/router";
-import "../../../framework/server/server";
-import "../../../framework/ws/frame";
-import "../../../framework/hub/hub";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/router/router";
+import "raize_core/server/server";
+import "raize_realtime/ws/frame";
+import "raize_realtime/hub/hub";
 
 var g_hub: RzHub* = 0;
 var g_router: RzRouter* = 0;

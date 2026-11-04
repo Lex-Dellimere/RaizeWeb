@@ -8,8 +8,8 @@ APPS    := tasks chat todos
 # Fixture apps: tests/fixtures/app/<name>/app.mettle -> build/<name>, checked by
 # tests/fixtures/app/<name>/test.sh (tests/integration/apps.sh runs them all).
 FIXTURE_APPS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/fixtures/app/*/app.mettle))))
-FRAMEWORK := raize.mettle $(wildcard framework/*/*.mettle) framework/signal/signal.js
-MODULES := $(wildcard framework/*/*.mettle) $(wildcard tests/unit/*.mettle)
+FRAMEWORK := raize.mettle $(wildcard app/*.mettle libs/*/*.mettle libs/*/*/*.mettle) libs/signal/signal.js
+MODULES := $(wildcard app/*.mettle libs/*/*.mettle libs/*/*/*.mettle) $(wildcard tests/unit/*.mettle)
 
 .PHONY: all clean test lint integration apps apps-release $(APPS) run-% smoke tasks-test ws-test hub-test chat-test signal-test
 
@@ -21,7 +21,7 @@ $(BUILD):
 # Every app goes through tools/rzpp: it expands html"""...""" view literals and rz
 # decorators (@resource, @signal) into plain Mettle, keeping every line number
 # (until the compiler has tagged literals and @generate, DECISIONS.md D1).
-$(BUILD)/rzpp: $(wildcard tools/rzpp/*.mettle) $(wildcard framework/str/*.mettle) | $(BUILD)
+$(BUILD)/rzpp: $(wildcard tools/rzpp/*.mettle) $(wildcard libs/core/str/*.mettle) | $(BUILD)
 	$(M) --build tools/rzpp/main.mettle -o $@
 
 %.gen.mettle: %.mettle $(BUILD)/rzpp
@@ -83,14 +83,14 @@ integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/todos $(BUILD)/ws_echo $
 	./tests/integration/apps.sh $(BUILD)
 
 # WebSockets on the epoll loop (needs the dev compiler's syscall builtin).
-$(BUILD)/ws_echo: tests/fixtures/poll/ws_echo.mettle $(wildcard framework/*/*.mettle) | $(BUILD)
+$(BUILD)/ws_echo: tests/fixtures/poll/ws_echo.mettle $(FRAMEWORK) | $(BUILD)
 	$(M) --build $< -o $@
 
 ws-test: $(BUILD)/ws_echo
 	./tests/integration/ws.sh $(BUILD)/ws_echo 8095
 
 # The same checks through the real server: router -> rz_hub_upgrade -> hub.
-$(BUILD)/hub_app: tests/fixtures/hub/app.mettle $(wildcard framework/*/*.mettle) | $(BUILD)
+$(BUILD)/hub_app: tests/fixtures/hub/app.mettle $(FRAMEWORK) | $(BUILD)
 	$(M) --build $< -o $@
 
 hub-test: $(BUILD)/hub_app

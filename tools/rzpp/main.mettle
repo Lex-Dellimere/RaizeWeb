@@ -18,7 +18,7 @@
 
 import "std/io";
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 import "gen";
 import "msg";

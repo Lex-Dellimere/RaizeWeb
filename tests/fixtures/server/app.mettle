@@ -13,9 +13,9 @@
 
 import "std/io";
 import "std/mem";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/server/server";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/server/server";
 
 fn h_root(ctx: RzContext*) -> int32 {
   return rz_ctx_text(ctx, 200, "hello from fixture\n");

@@ -22,10 +22,10 @@
 //   ./build/rz_mw_fault ; echo "exit=$?"     # -> Unhandled runtime signal 11 ... exit=139
 
 import "std/io";
-import "../../../framework/str/str";
-import "../../../framework/context/context";
-import "../../../framework/middleware/chain";
-import "../../../framework/middleware/recover";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/middleware/chain";
+import "raize_core/middleware/recover";
 
 var g_chain: RzChain* = 0;
 

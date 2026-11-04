@@ -19,9 +19,9 @@
 // anything; see the router report's residual risks.)
 import "std/io";
 import "std/mem";
-import "../../../framework/str/str";
-import "../../../framework/router/router";
-import "../../../framework/context/context";
+import "raize_core/str/str";
+import "raize_core/router/router";
+import "raize_core/context/context";
 
 fn h_home(c: RzContext*) -> int32 {
   return 200;

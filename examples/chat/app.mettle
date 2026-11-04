@@ -19,12 +19,12 @@
 import "std/io";
 import "std/mem";
 import "std/thread";
-import "../../framework/str/str";
-import "../../framework/context/context";
-import "../../framework/router/router";
-import "../../framework/server/server";
-import "../../framework/hub/hub";
-import "../../framework/channel/channel";
+import "raize_core/str/str";
+import "raize_core/context/context";
+import "raize_core/router/router";
+import "raize_core/server/server";
+import "raize_realtime/hub/hub";
+import "raize_realtime/channel/channel";
 
 const PAGE: string = import_str "index.html";
 const NAME_MAX: int64 = 32;

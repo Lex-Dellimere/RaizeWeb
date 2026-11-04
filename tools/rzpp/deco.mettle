@@ -10,7 +10,7 @@
 // every line its number: diagnostics and compiler errors point at the real source.
 
 import "std/mem";
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 import "decl";
 import "resource";

@@ -1,0 +1,20 @@
+import "mbuild/api";
+
+// raize: a Phoenix-style web framework for Mettle (SSR, Signals, Channels, Resources).
+// This is the umbrella package: `import "raize/raize"` brings in the whole app-facing API.
+// Library only; its one bin is the rzpp view/decorator preprocessor, which apps build with
+// mb_dep_bin("raize", "rzpp") and run from their own hook_pre_build.
+fn project() {
+  mb_package("raize", "0.1.0");
+  mb_meta("description", "Phoenix-style web framework for Mettle: SSR, Signals, Channels, Resources");
+  mb_meta("license", "Apache-2.0");
+  mb_bin("rzpp", "tools/rzpp/main.mettle");
+}
+
+// Sibling packages by path until raize is published; publish switches these to mb_dep.
+fn deps() {
+  mb_dep_path("raize_core", "libs/core");
+  mb_dep_path("raize_realtime", "libs/realtime");
+  mb_dep_path("raize_signal", "libs/signal");
+  mb_dep_path("raize_resource", "libs/resource");
+}

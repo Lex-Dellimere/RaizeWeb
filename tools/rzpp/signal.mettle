@@ -10,7 +10,7 @@
 //
 // CounterMsg__handle and CounterMsg__publish come from msg.mettle, as before.
 
-import "../../framework/str/str";
+import "raize_core/str/str";
 import "src";
 import "decl";
 
