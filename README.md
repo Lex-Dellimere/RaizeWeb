@@ -187,3 +187,7 @@ make integration     # lint, unit, then every HTTP suite over real sockets
 Live orchestration log: `reports/director.md`. Independent evidence:
 `reports/status.md`. Plan and acceptance criteria:
 `docs/architecture-review.md`.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
