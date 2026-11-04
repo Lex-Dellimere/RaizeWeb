@@ -13,7 +13,7 @@
 // would cost in setup, and it keeps the type allocation-free: an RzVarMap is
 // a stack value of 32 * 16 + 4 bytes, safe to build per request.
 
-import "../str/str";
+import "raize_core/str/str";
 
 export const RZ_TEMPLATE_MAX_VARS: int32 = 32;
 export const RZ_TEMPLATE_MAX_NAME: int64 = 64;

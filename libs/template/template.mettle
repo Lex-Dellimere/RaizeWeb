@@ -31,7 +31,7 @@
 
 import "std/io";
 import "std/mem";
-import "../str/str";
+import "raize_core/str/str";
 import "vars";
 import "escape";
 import "compile";

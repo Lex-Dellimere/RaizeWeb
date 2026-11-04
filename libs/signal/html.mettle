@@ -20,7 +20,7 @@
 
 import "std/mem";
 import "raize_core/str/str";
-import "raize_core/template/escape";
+import "raize_template/escape";
 
 export const RZ_SLOT_EMPTY: int32 = 0;
 export const RZ_SLOT_TEXT: int32 = 1;

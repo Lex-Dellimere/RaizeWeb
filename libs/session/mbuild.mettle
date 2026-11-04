@@ -13,7 +13,7 @@ fn project() {
 // Sibling packages by path until raize is published; publish switches these to mb_dep.
 // `session` brings `crypto` (cryptex) transitively.
 fn deps() {
-  mb_dep_path("raize", "../..");
+  mb_dep_path("raize_app", "../app");
   mb_dep_path("raize_core", "../core");
   mb_dep_path("session", "../../../session");
 }

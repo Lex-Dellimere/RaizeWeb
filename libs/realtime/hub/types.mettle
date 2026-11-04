@@ -27,7 +27,7 @@
 // id kept after its socket closed matches nothing instead of a stranger.
 
 import "../ws/conn";
-import "raize_core/poll/poll";
+import "../poll/poll";
 
 export const RZ_HUB_MAX_CONNS: int32 = 4096;
 export const RZ_HUB_DEFAULT_CONNS: int32 = 1024;

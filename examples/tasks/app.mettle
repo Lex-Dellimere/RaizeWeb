@@ -36,8 +36,8 @@ import "raize_core/middleware/chain";
 import "raize_core/middleware/logging";
 import "raize_core/middleware/recover";
 import "raize_core/middleware/cors";
-import "raize_core/template/template";
-import "raize_core/template/vars";
+import "raize_template/template";
+import "raize_template/vars";
 import "raize_core/static/static";
 import "raize_core/config/config";
 

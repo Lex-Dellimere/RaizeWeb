@@ -1,17 +1,20 @@
 old import prefix	new import prefix
-raize/framework/app/	raize/
+raize/framework/app/	raize_app/
 raize/framework/channel/	raize_realtime/channel/
 raize/framework/config/	raize_core/config/
 raize/framework/context/	raize_core/context/
 raize/framework/core/	raize_core/core/
 raize/framework/hub/	raize_realtime/hub/
 raize/framework/middleware/	raize_core/middleware/
-raize/framework/poll/	raize_core/poll/
+raize/framework/poll/	raize_realtime/poll/
 raize/framework/resource/	raize_resource/
 raize/framework/router/	raize_core/router/
 raize/framework/server/	raize_core/server/
 raize/framework/signal/	raize_signal/
 raize/framework/static/	raize_core/static/
 raize/framework/str/	raize_core/str/
-raize/framework/template/	raize_core/template/
+raize/framework/template/	raize_template/
 raize/framework/ws/	raize_realtime/ws/
+raize_core/poll/	raize_realtime/poll/
+raize_core/template/	raize_template/
+raize/app/	raize_app/

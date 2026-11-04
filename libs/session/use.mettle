@@ -18,9 +18,9 @@ import "raize_core/str/str";
 import "raize_core/core/status";
 import "raize_core/context/request";
 import "raize_core/context/context";
-import "raize/app/types";
-import "raize/app/use";
-import "raize/app/timer";
+import "raize_app/types";
+import "raize_app/use";
+import "raize_app/timer";
 import "state";
 
 /// Session settings for rz_use_session. Start from rz_session_defaults() and set

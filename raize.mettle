@@ -14,4 +14,4 @@ import "raize_core/context/context";
 import "raize_signal/html";
 import "raize_signal/signal";
 import "raize_resource/resource";
-import "app/app";
+import "raize_app/app";

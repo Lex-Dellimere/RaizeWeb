@@ -1,8 +1,9 @@
-// raize_realtime facade: `import "raize_realtime/realtime"` brings in WebSocket, the hub
+// raize_realtime facade: `import "raize_realtime/realtime"` brings in the poll loop, WebSocket, the hub
 // thread and channels. Each area can also be imported alone, e.g.
 // `import "raize_realtime/channel/channel"`.
 //
 // This module exports nothing itself.
+import "poll/poll";
 import "ws/handshake";
 import "ws/frame";
 import "ws/conn";

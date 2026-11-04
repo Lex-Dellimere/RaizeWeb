@@ -14,7 +14,9 @@ fn project() {
 // Sibling packages by path until raize is published; publish switches these to mb_dep.
 fn deps() {
   mb_dep_path("raize_core", "libs/core");
+  mb_dep_path("raize_template", "libs/template");
   mb_dep_path("raize_realtime", "libs/realtime");
   mb_dep_path("raize_signal", "libs/signal");
   mb_dep_path("raize_resource", "libs/resource");
+  mb_dep_path("raize_app", "libs/app");
 }

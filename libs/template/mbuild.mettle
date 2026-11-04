@@ -1,0 +1,14 @@
+import "mbuild/api";
+
+// raize_template: raize string templates: HTML/text renderer with escaping and sections
+// Part of raize (https://github.com/Lex-Dellimere/RaizeWeb). Library only, no bins.
+fn project() {
+  mb_package("raize_template", "0.1.0");
+  mb_meta("description", "raize string templates: HTML/text renderer with escaping and sections");
+  mb_meta("license", "Apache-2.0");
+}
+
+// Sibling packages by path until raize is published; publish switches these to mb_dep.
+fn deps() {
+  mb_dep_path("raize_core", "../core");
+}

@@ -17,7 +17,7 @@
 // filtered: see compile.mettle, RZ_OP_RAW. A template that uses triple braces
 // on request-controlled data is an injection bug, by definition.
 
-import "../str/str";
+import "raize_core/str/str";
 
 // The entity for one byte, or an empty view when the byte needs no escaping.
 // Exported for the escaping table test, not for hot-path use.

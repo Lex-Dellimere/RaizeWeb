@@ -26,7 +26,7 @@ product_lines() {
     }' "$1" | wc -l
 }
 
-for f in $(find app libs -name '*.mettle' -not -path '*/.mbuild/*' -not -name mbuild.mettle | sort); do
+for f in $(find libs -name '*.mettle' -not -path '*/.mbuild/*' -not -name mbuild.mettle | sort); do
   case "$f" in
     *_test.mettle) continue ;;
   esac

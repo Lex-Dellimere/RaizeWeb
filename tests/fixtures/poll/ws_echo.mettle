@@ -24,8 +24,8 @@ import "raize_core/server/listener";
 import "raize_realtime/ws/handshake";
 import "raize_realtime/ws/frame";
 import "raize_realtime/ws/conn";
-import "raize_core/poll/sys";
-import "raize_core/poll/poll";
+import "raize_realtime/poll/sys";
+import "raize_realtime/poll/poll";
 
 const SLOTS: int32 = 64;
 const LISTEN_TAG: int64 = 1000000;

@@ -16,7 +16,7 @@
 // The scanner is in scan.mettle; the compiled type is in types.mettle.
 
 import "std/mem";
-import "../str/str";
+import "raize_core/str/str";
 import "vars";
 import "types";
 import "scan";

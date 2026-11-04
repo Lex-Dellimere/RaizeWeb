@@ -8,10 +8,10 @@ APPS    := tasks chat todos
 # Fixture apps: tests/fixtures/app/<name>/app.mettle -> build/<name>, checked by
 # tests/fixtures/app/<name>/test.sh (tests/integration/apps.sh runs them all).
 FIXTURE_APPS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/fixtures/app/*/app.mettle))))
-FRAMEWORK := raize.mettle $(wildcard app/*.mettle libs/*/*.mettle libs/*/*/*.mettle) libs/signal/signal.js
+FRAMEWORK := raize.mettle $(wildcard libs/*/*.mettle libs/*/*/*.mettle) libs/signal/signal.js
 # raize_session builds on these sibling repos (mettle.deps: session, crypto).
 FRAMEWORK += $(wildcard ../session/src/*.mettle ../cryptex/src/*.mettle)
-MODULES := $(wildcard app/*.mettle libs/*/*.mettle libs/*/*/*.mettle) $(wildcard tests/unit/*.mettle)
+MODULES := $(wildcard libs/*/*.mettle libs/*/*/*.mettle) $(wildcard tests/unit/*.mettle)
 
 .PHONY: all clean test lint integration apps apps-release $(APPS) run-% smoke tasks-test ws-test hub-test chat-test signal-test
 

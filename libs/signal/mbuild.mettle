@@ -12,4 +12,5 @@ fn project() {
 fn deps() {
   mb_dep_path("raize_core", "../core");
   mb_dep_path("raize_realtime", "../realtime");
+  mb_dep_path("raize_template", "../template");
 }

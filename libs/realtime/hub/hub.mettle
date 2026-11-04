@@ -28,8 +28,8 @@ import "raize_core/str/str";
 import "raize_core/context/context";
 import "../ws/handshake";
 import "../ws/frame";
-import "raize_core/poll/sys";
-import "raize_core/poll/poll";
+import "../poll/sys";
+import "../poll/poll";
 import "types";
 import "loop";
 

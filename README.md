@@ -14,26 +14,25 @@ links is Mettle's, which means no libc, no TLS library, no OpenSSL, and no
 
 ```
 raize.mettle      umbrella facade: `import "raize/raize"` (package `raize`, repo root)
-app/              rz_run, declarations, rz_use, rz_every (package `raize`)
 tools/rzpp/       the html""" / @resource / @signal preprocessor, raize's only bin
-libs/core/        package `raize_core`: str, core/status, context, router, server,
-                  poll, middleware, config, static, template
-libs/realtime/    package `raize_realtime`: ws, hub, channel
-libs/signal/      package `raize_signal`: Signals, html views, diffs, signal.js
-libs/resource/    package `raize_resource`: resources, memory layer, JSON API
-libs/session/     package `raize_session` (opt-in): cookie sessions, CSRF guard, flash,
-                  rz_conn_session_get, over the `session` library (app supplies the store)
+libs/core/        `raize_core`: str, core/status, context, router, server, middleware,
+                  config, static
+libs/realtime/    `raize_realtime`: poll loop, ws, hub, channel
+libs/template/    `raize_template`: HTML/text string templates
+libs/signal/      `raize_signal`: Signals, html views, diffs, signal.js
+libs/resource/    `raize_resource`: resources, memory layer, JSON API
+libs/app/         `raize_app`: rz_run, declarations, guards, rz_use, rz_every
+libs/session/     `raize_session` (opt-in): cookie sessions, CSRF, flash over `session`
 examples/         tasks (JSON API + template), chat (channels), todos (Signal)
 tests/            lint.sh, integration/*.sh, unit/*.mettle, fixtures/
-docs/             handoff, design notes, SPLIT-imports.tsv (old -> new import paths)
+docs/             handoff, decisions.md (design record), design notes, SPLIT-imports.tsv
 ```
 
 Each package has its own `mbuild.mettle`; dependencies are one-way:
-`raize_core` <- `raize_realtime` <- `raize_signal`, `raize_core` <- `raize_resource`,
-and the `raize` umbrella depends on all four. `raize_session` depends on `raize`,
-`raize_core` and `session` (which brings `crypto`); the umbrella does not depend on it,
-so apps opt in with `import "raize_session/raize_session"`. Inside a package, imports are relative;
-across packages they use the package name, e.g. `import "raize_core/context/context"`.
+`raize_core` <- `raize_realtime`, `raize_template` <- `raize_signal`; `raize_core` <-
+`raize_resource`; `raize_app` depends on those four; add-ons such as `raize_session` depend
+on `raize_app`, and the `raize` umbrella only re-exports. Inside a package, imports are
+relative; across packages they use the package name, e.g. `import "raize_core/context/context"`.
 
 ## Build and run
 
@@ -105,7 +104,7 @@ Does not promise, because Mettle cannot:
 - DNS. Bind by address.
 - HTTP/2, chunked request bodies, or `Expect: 100-continue` beyond the
   documented answer.
-- An event loop off Linux x86-64. `libs/core/poll` uses raw x86-64 syscall
+- An event loop off Linux x86-64. `libs/realtime/poll` uses raw x86-64 syscall
   numbers through the dev compiler's `syscall` builtin; the blocking HTTP
   server works everywhere.
 - Catching a fault. A hardware fault is a process death in Mettle; the
@@ -117,7 +116,7 @@ Does not promise, because Mettle cannot:
 WebSockets, channels and Signals (real-time pages, after Phoenix LiveView),
 following Phoenix's model and wire protocol:
 see `docs/design/realtime.md`. Done so far: the WebSocket protocol
-(`libs/realtime/ws`, interpreter-tested) and the epoll loop (`libs/core/poll`),
+(`libs/realtime/ws`, interpreter-tested) and the epoll loop (`libs/realtime/poll`),
 proven together by `make ws-test` (18 checks over real sockets: echo,
 fragments, ping, close codes 1002/1007/1009, a cross-thread broadcast, 50
 concurrent clients). `libs/realtime/hub` mounts WebSockets on the real server: a
@@ -148,7 +147,7 @@ make signal-test                          # rzpp diagnostics + 27 protocol check
 
 See `docs/design/views.md`.
 
-`libs/core/poll` and `libs/realtime/hub` are a bridge: the epoll loop and the hub
+`libs/realtime/poll` and `libs/realtime/hub` are a bridge: the epoll loop and the hub
 thread will be replaced by the BEAM/OTP-style Mettle runtime. App code uses
 only the channel and Signal APIs, so it does not change when that happens.
 
@@ -167,7 +166,7 @@ All five phases are in, gated end to end:
 Verified numbers (see `reports/status.md` for transcripts):
 
 ```
-app/ + libs/    45 modules, 13 152 lines, LINT OK (<=400 product lines/file)
+libs/           45 modules, 13 152 lines, LINT OK (<=400 product lines/file)
 unit            139 @test assertions across 22 files
 integration     SMOKE OK 7/7 · EDGES OK 11/11 · SITE OK 16/16
                 LEAK OK 2 000 requests, 0 kB growth (both apps)

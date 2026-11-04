@@ -1,10 +1,10 @@
 import "mbuild/api";
 
-// raize_realtime: raize realtime: WebSocket, hub thread, Phoenix v2 channels
+// raize_realtime: raize realtime: poll loop, WebSocket, hub thread, Phoenix v2 channels
 // Part of raize (https://github.com/Lex-Dellimere/RaizeWeb). Library only, no bins.
 fn project() {
   mb_package("raize_realtime", "0.1.0");
-  mb_meta("description", "raize realtime: WebSocket, hub thread, Phoenix v2 channels");
+  mb_meta("description", "raize realtime: poll loop, WebSocket, hub thread, Phoenix v2 channels");
   mb_meta("license", "Apache-2.0");
 }
 
