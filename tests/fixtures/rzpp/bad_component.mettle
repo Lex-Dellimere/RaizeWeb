@@ -1,0 +1,9 @@
+fn card(title: string) -> RzHtml* {
+  return html"""<div>{title}</div>""";
+}
+
+fn view(n: int32) -> RzHtml* {
+  return html"""
+    <.card heading="x" />
+  """;
+}

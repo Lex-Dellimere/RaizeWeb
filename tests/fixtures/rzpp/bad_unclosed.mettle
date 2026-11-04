@@ -1,0 +1,5 @@
+fn view(n: int32) -> RzHtml* {
+  return html"""
+    <p>{n</p>
+  """;
+}

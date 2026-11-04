@@ -1,0 +1,9 @@
+enum PageMsg { Go }
+
+fn page_update(s: Page*, msg: PageMsg) { }
+
+fn view(n: int32) -> RzHtml* {
+  return html"""
+    <button on:click={Stop}>stop</button>
+  """;
+}

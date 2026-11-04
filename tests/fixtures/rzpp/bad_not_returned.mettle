@@ -1,0 +1,4 @@
+fn view(n: int32) -> RzHtml* {
+  var h: RzHtml* = html"""<p>{n}</p>""";
+  return h;
+}

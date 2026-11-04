@@ -1,0 +1,176 @@
+// tools/rzpp/src — the preprocessor's state and its small text helpers.
+
+import "std/mem";
+import "../../framework/str/str";
+
+export struct RzppGen {
+  src: string;           // the whole source file
+  path: string;          // for diagnostics
+  prefix: string;        // statics names: RZS_<prefix>_<n>
+  consts: RaizeBuf*;     // generated const declarations
+  nconst: int32;
+  nvar: int32;
+  err: RaizeBuf*;        // first error, "path:line: message" (empty = none)
+  enums: RaizeStrList*;  // message enum names (ending in Msg)
+  variants: RaizeStrList*;   // "Variant" per entry...
+  owners: RaizeStrList*;     // ...and the enum that declares it
+}
+
+export fn rzpp_line_of(src: string, at: int64) -> int64 {
+  var line: int64 = 1;
+  var i: int64 = 0;
+  while (i < at && i < (int64)src.length) {
+    if (src.chars[i] == 10) { line = line + 1; }
+    i = i + 1;
+  }
+  return line;
+}
+
+// Records the first error only: later ones are usually consequences.
+export fn rzpp_fail(g: RzppGen*, at: int64, msg: string) {
+  if (g->err->len > 0) { return; }
+  raize_buf_add(g->err, g->path);
+  raize_buf_add(g->err, ":");
+  raize_buf_add_int(g->err, rzpp_line_of(g->src, at));
+  raize_buf_add(g->err, ": ");
+  raize_buf_add(g->err, msg);
+}
+
+export fn rzpp_failed(g: RzppGen*) -> bool {
+  return g->err->len > 0;
+}
+
+export fn rzpp_ident_char(c: int32) -> bool {
+  return raize_char_is_alpha(c) || raize_char_is_digit(c) || c == 95;
+}
+
+// A view without the surrounding whitespace.
+export fn rzpp_trim(s: string) -> string {
+  var a: int64 = 0;
+  var b: int64 = (int64)s.length;
+  while (a < b && raize_char_is_space((int32)s.chars[a])) { a = a + 1; }
+  while (b > a && raize_char_is_space((int32)s.chars[b - 1])) { b = b - 1; }
+  return raize_str_sub(s, a, b);
+}
+
+// Skips a string or char literal starting at i (s[i] is the quote). Returns
+// the offset after it.
+fn rzpp_skip_quoted(s: string, i: int64) -> int64 {
+  var q: uint8 = s.chars[i];
+  var k: int64 = i + 1;
+  while (k < (int64)s.length) {
+    if (s.chars[k] == 92) { k = k + 2; continue; }
+    if (s.chars[k] == q) { return k + 1; }
+    k = k + 1;
+  }
+  return (int64)s.length;
+}
+
+// Offset of the `}` matching the `{` at `open`, skipping quoted literals, or -1.
+export fn rzpp_match_brace(s: string, open: int64) -> int64 {
+  var depth: int32 = 0;
+  var i: int64 = open;
+  while (i < (int64)s.length) {
+    var c: int32 = (int32)s.chars[i];
+    if (c == 34 || c == 39) { i = rzpp_skip_quoted(s, i); continue; }
+    if (c == 123) { depth = depth + 1; }
+    if (c == 125) {
+      depth = depth - 1;
+      if (depth == 0) { return i; }
+    }
+    i = i + 1;
+  }
+  return -1;
+}
+
+// Offset of the first `{` at nesting depth 0 from `from` (parens and brackets
+// count as nesting), or -1.
+export fn rzpp_top_brace(s: string, from: int64) -> int64 {
+  var depth: int32 = 0;
+  var i: int64 = from;
+  while (i < (int64)s.length) {
+    var c: int32 = (int32)s.chars[i];
+    if (c == 34 || c == 39) { i = rzpp_skip_quoted(s, i); continue; }
+    if (c == 40 || c == 91) { depth = depth + 1; }
+    if (c == 41 || c == 93) { depth = depth - 1; }
+    if (c == 123 && depth == 0) { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+export fn rzpp_list_index(l: RaizeStrList*, s: string) -> int64 {
+  var i: int64 = 0;
+  while (i < l->len) {
+    if (raize_str_eq(l->items[i], s)) { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+// Parameter names of `fn name(...)` declared in src, or 0 when there is none.
+export fn rzpp_fn_params(src: string, name: string) -> RaizeStrList* {
+  var key: RaizeBuf* = raize_buf_new();
+  raize_buf_add(key, "fn ");
+  raize_buf_add(key, name);
+  raize_buf_add(key, "(");
+  var at: int64 = raize_str_find(src, raize_buf_str(key));
+  var klen: int64 = key->len;
+  raize_buf_free(key);
+  if (at < 0) { return 0; }
+  var i: int64 = at + klen;
+  var close: int64 = raize_str_find_byte_from(src, 41, i);
+  if (close < 0) { return 0; }
+  var out: RaizeStrList* = raize_strlist_new();
+  var parts: RaizeStrList* = raize_str_split(raize_str_sub(src, i, close), 44);
+  var k: int64 = 0;
+  while (k < parts->len) {
+    var p: string = rzpp_trim(parts->items[k]);
+    var colon: int64 = raize_str_find_byte(p, 58);
+    if (colon > 0) { raize_strlist_push(out, rzpp_trim(raize_str_sub(p, 0, colon))); }
+    k = k + 1;
+  }
+  raize_strlist_free(parts);
+  return out;
+}
+
+// Appends `s` as a Mettle string literal: quotes, \ \n \t \r escapes, and
+// `{` doubled so the compiler does not interpolate markup.
+export fn rzpp_mettle_literal(out: RaizeBuf*, s: string) {
+  raize_buf_add_byte(out, 34);
+  var i: int64 = 0;
+  while (i < (int64)s.length) {
+    var c: int32 = (int32)s.chars[i];
+    if (c == 34) { raize_buf_add(out, "\\\""); }
+    else if (c == 92) { raize_buf_add(out, "\\\\"); }
+    else if (c == 10) { raize_buf_add(out, "\\n"); }
+    else if (c == 9) { raize_buf_add(out, "\\t"); }
+    else if (c == 13) { raize_buf_add(out, "\\r"); }
+    else if (c == 123) { raize_buf_add(out, "{{{{"); }   // "{{{{" is the two bytes {{
+    else { raize_buf_add_byte(out, c); }
+    i = i + 1;
+  }
+  raize_buf_add_byte(out, 34);
+}
+
+// The message enum that declares `variant`, or empty.
+export fn rzpp_enum_of(g: RzppGen*, variant: string) -> string {
+  var i: int64 = rzpp_list_index(g->variants, variant);
+  if (i < 0) { return raize_str_empty(); }
+  return g->owners->items[i];
+}
+
+// True when src[at] sits after `//` on its line (a comment mentioning
+// html""" or an enum is not code).
+export fn rzpp_in_comment(src: string, at: int64) -> bool {
+  var i: int64 = at;
+  while (i > 0 && src.chars[i - 1] != 10) { i = i - 1; }
+  var in_str: bool = false;
+  while (i + 1 < at) {
+    var c: int32 = (int32)src.chars[i];
+    if (c == 34) { in_str = !in_str; }
+    if (!in_str && c == 47 && src.chars[i + 1] == 47) { return true; }
+    i = i + 1;
+  }
+  return false;
+}

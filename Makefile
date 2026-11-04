@@ -4,15 +4,26 @@ M       ?= ./mettle-build/bin/mettle
 BUILD   ?= build
 PORT    ?= 8080
 
-APPS    := tasks chat
+APPS    := tasks chat todos
 MODULES := $(wildcard framework/*/*.mettle) $(wildcard tests/unit/*.mettle)
 
-.PHONY: all clean test lint integration $(APPS) run-% smoke tasks-test ws-test hub-test chat-test
+.PHONY: all clean test lint integration $(APPS) run-% smoke tasks-test ws-test hub-test chat-test signal-test
 
 all: $(APPS)
 
 $(BUILD):
 	mkdir -p $(BUILD)
+
+# Signals: tools/rzpp turns html"""...""" view literals into plain Mettle
+# (until the compiler has tagged literals, docs/design/views.md §5).
+$(BUILD)/rzpp: $(wildcard tools/rzpp/*.mettle) $(wildcard framework/str/*.mettle) | $(BUILD)
+	$(M) --build tools/rzpp/main.mettle -o $@
+
+examples/todos/app.gen.mettle: examples/todos/app.mettle $(BUILD)/rzpp
+	$(BUILD)/rzpp $< $@
+
+$(BUILD)/todos: examples/todos/app.gen.mettle $(wildcard framework/*/*.mettle) framework/signal/signal.js | $(BUILD)
+	$(M) --build $< -o $@
 
 $(BUILD)/%: examples/%/app.mettle | $(BUILD)
 	$(M) --build $< -o $@
@@ -41,7 +52,7 @@ tasks-test: $(BUILD)/tasks
 	./tests/integration/config.sh $(BUILD)/tasks 8082
 
 # Everything, in order: layout, unit, then the HTTP and WebSocket suites.
-integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/ws_echo $(BUILD)/hub_app
+integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/todos $(BUILD)/ws_echo $(BUILD)/hub_app
 	./tests/integration/tasks.sh $(BUILD)/tasks 8080
 	./tests/integration/http_edges.sh $(BUILD)/tasks 8080
 	./tests/integration/leak.sh $(BUILD)/tasks 8080 2000
@@ -49,6 +60,8 @@ integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/ws_echo $(BUILD)/hub_app
 	./tests/integration/ws.sh $(BUILD)/ws_echo 8095
 	./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
 	./tests/integration/chat.sh $(BUILD)/chat 8090
+	./tests/integration/rzpp.sh $(BUILD)/rzpp
+	./tests/integration/signal.sh $(BUILD)/todos 8070
 
 # WebSockets on the epoll loop (needs the dev compiler's syscall builtin).
 $(BUILD)/ws_echo: tests/fixtures/poll/ws_echo.mettle $(wildcard framework/*/*.mettle) | $(BUILD)
@@ -63,6 +76,11 @@ $(BUILD)/hub_app: tests/fixtures/hub/app.mettle $(wildcard framework/*/*.mettle)
 
 hub-test: $(BUILD)/hub_app
 	./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
+
+# Signals: rzpp diagnostics, then examples/todos driven like signal.js.
+signal-test: $(BUILD)/rzpp $(BUILD)/todos
+	./tests/integration/rzpp.sh $(BUILD)/rzpp
+	./tests/integration/signal.sh $(BUILD)/todos 8070
 
 # Phoenix channels: examples/chat driven by a v2-protocol client.
 chat-test: $(BUILD)/chat

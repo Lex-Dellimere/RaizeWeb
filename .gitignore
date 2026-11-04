@@ -5,3 +5,4 @@ t/
 *.obj
 *.out
 *.log
+*.gen.mettle

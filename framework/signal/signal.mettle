@@ -1,0 +1,243 @@
+// raize/signal — Signals: real-time pages in the style of Phoenix LiveView.
+//
+// A Signal is a typed state struct S, a message enum M, and four functions:
+//
+//   mount(s: S*)                 fill a fresh, zeroed state
+//   update(s: S*, msg: M)        handle one message
+//   view(s: S*) -> RzHtml*       render (an html"""...""" literal)
+//   leave(s: S*)                 free what the state owns
+//
+// tools/rzpp finds update() by its signature (the function whose second
+// parameter is the message enum) and generates NameMsg__decode,
+// NameMsg__handle and a typed registration function, NameMsg__signal. The
+// app declares the Signal once and mounts two routes:
+//
+//   TodosMsg__signal(chans, "todos", &todos_mount, &todos_view, &todos_leave);
+//   fn h_todos(ctx: RzContext*) -> int32 { return rz_signal_page(ctx, "todos", ""); }
+//   rz_router_add(router, "GET", "/todos", &h_todos);
+//   rz_router_add(router, "GET", "/rz/signal.js", &rz_signal_js);
+//
+// (A generic rz_signal_define<S, M> would be nicer, but the current compiler
+// cannot see S and M inside a lambda, cannot take &generic<T>, and cannot
+// call through a pointer with an enum argument; the generated glue calls
+// update() directly instead.)
+//
+// Protocol (on a channel router, topic "signal:<name>"):
+//   join      -> mount, view, reply {"rendered": <Phoenix rendered JSON>}
+//   "event"   payload ["Variant", value?] -> decode, update, view, and reply
+//             {"diff": <changes>} (or {} when nothing changed)
+//   leave     -> leave(state)
+// The first GET renders the same view to plain HTML, so the page works and
+// is indexable before the socket connects.
+//
+// Everything after the first GET runs on the hub thread: one member, one
+// state, messages one at a time. That is the process model the Mettle
+// runtime will provide (docs/design/realtime.md §4).
+
+import "std/mem";
+import "../str/str";
+import "../context/context";
+import "../channel/channel";
+import "html";
+import "render";
+
+export const RZ_SIGNAL_MAX: int32 = 32;
+const RZ_SIGNAL_JS: string = import_str "signal.js";
+
+// State pointers are erased to rawptr here; NameMsg__signal checked the real
+// types when the app registered the Signal.
+export struct RzSignalDef {
+  name: string;
+  size: int64;
+  mount: fn(rawptr) -> void;
+  handle: fn(rawptr, string, string) -> int32;   // decode + update
+  view: fn(rawptr) -> RzHtml*;
+  leave: fn(rawptr) -> void;
+}
+
+struct RzSignalInst {
+  def: RzSignalDef*;
+  state: rawptr;
+  last: RzHtml*;
+}
+
+// Written while the app starts (before the server runs), read-only after.
+var g_rz_signals: RzSignalDef* = 0;
+var g_rz_signal_count: int32 = 0;
+var g_rz_signal_arena: RzArena* = 0;     // hub thread: event decoding
+
+fn rz_signal_find(name: string) -> RzSignalDef* {
+  var i: int32 = 0;
+  while (i < g_rz_signal_count) {
+    if (raize_str_eq(g_rz_signals[i].name, name)) { return &g_rz_signals[i]; }
+    i = i + 1;
+  }
+  return 0;
+}
+
+// ---- message payload helpers (called by rzpp-generated code) --------------
+
+export fn rz_signal_arg_put_str(b: RaizeBuf*, s: string) {
+  raize_buf_add_byte(b, 34);
+  rz_json_escape_into(b, s);
+  raize_buf_add_byte(b, 34);
+}
+
+export fn rz_signal_arg_put_bool(b: RaizeBuf*, v: bool) {
+  if (v) { raize_buf_add(b, "true"); } else { raize_buf_add(b, "false"); }
+}
+
+export fn rz_signal_arg_int(raw: string, out: int64*) -> bool {
+  var s: string = raw;
+  if (s.length >= 2 && s.chars[0] == 34) { s = raize_str_sub(s, 1, (int64)s.length - 1); }
+  if (s.length == 0) { return false; }
+  var i: int64 = 0;
+  if (s.chars[0] == 45) { i = 1; }
+  if (i >= (int64)s.length) { return false; }
+  while (i < (int64)s.length) {
+    if (!raize_char_is_digit((int32)s.chars[i])) { return false; }
+    i = i + 1;
+  }
+  *out = raize_str_to_int(s);
+  return true;
+}
+
+export fn rz_signal_arg_bool(raw: string, out: bool*) -> bool {
+  if (raize_str_eq(raw, "true")) { *out = true; return true; }
+  if (raize_str_eq(raw, "false")) { *out = false; return true; }
+  return false;
+}
+
+// A JSON string payload, unescaped. Valid until the next event.
+export fn rz_signal_arg_str(raw: string, out: string*) -> bool {
+  if (raw.length < 2 || raw.chars[0] != 34 || raw.chars[raw.length - 1] != 34) { return false; }
+  if (g_rz_signal_arena == 0) { g_rz_signal_arena = rz_arena_new(); }
+  *out = rz_json_unescape(raize_str_sub(raw, 1, (int64)raw.length - 1), g_rz_signal_arena);
+  return true;
+}
+
+// ---- definition -----------------------------------------------------------
+
+fn rz_signal_join(ctx: RzChanCtx*, payload: string) -> int32 {
+  var def: RzSignalDef* = rz_signal_find(raize_str_from(ctx->topic, 7));
+  if (def == 0) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"no such signal\"}");
+    return 1;
+  }
+  var inst: RzSignalInst* = (RzSignalInst*)calloc(1, sizeof(RzSignalInst));
+  var state: rawptr = calloc(1, def->size);
+  if (inst == 0 || state == 0) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"out of memory\"}");
+    return 1;
+  }
+  inst->def = def;
+  inst->state = state;
+  def->mount(state);
+  inst->last = def->view(state);
+  var b: RaizeBuf* = raize_buf_new();
+  raize_buf_add(b, "{{\"rendered\":");
+  rz_html_json(inst->last, b);
+  raize_buf_add_byte(b, 125);
+  rz_chan_reply_json(ctx, raize_buf_str(b));
+  raize_buf_free(b);
+  ctx->state = (rawptr)inst;
+  return 0;
+}
+
+fn rz_signal_in(ctx: RzChanCtx*, event: string, payload: string) -> int32 {
+  var inst: RzSignalInst* = (RzSignalInst*)ctx->state;
+  if (inst == 0 || !raize_str_eq(event, "event")) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"unknown event\"}");
+    return 1;
+  }
+  if (g_rz_signal_arena == 0) { g_rz_signal_arena = rz_arena_new(); }
+  rz_arena_reset(g_rz_signal_arena);
+  var name_raw: string = raize_str_empty();
+  var value: string = raize_str_empty();
+  var name: string = raize_str_empty();
+  if (!rz_json_array_at(payload, 0, &name_raw) || !rz_signal_arg_str(name_raw, &name)) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"bad event\"}");
+    return 1;
+  }
+  rz_json_array_at(payload, 1, &value);
+  if (inst->def->handle(inst->state, name, value) != 0) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"bad message\"}");
+    return 1;
+  }
+  var next: RzHtml* = inst->def->view(inst->state);
+  var b: RaizeBuf* = raize_buf_new();
+  raize_buf_add(b, "{{\"diff\":");
+  if (!rz_html_diff(inst->last, next, b)) { raize_buf_add(b, "{{}"); }
+  raize_buf_add_byte(b, 125);
+  rz_chan_reply_json(ctx, raize_buf_str(b));
+  raize_buf_free(b);
+  rz_html_free(inst->last);
+  inst->last = next;
+  return 0;
+}
+
+fn rz_signal_leave(ctx: RzChanCtx*) {
+  var inst: RzSignalInst* = (RzSignalInst*)ctx->state;
+  if (inst == 0) { return; }
+  inst->def->leave(inst->state);
+  rz_html_free(inst->last);
+  free(inst->state);
+  free((rawptr)inst);
+  ctx->state = 0;
+}
+
+// Registers a Signal (called by the rzpp-generated NameMsg__signal, before
+// the server runs). The first call also defines the "signal:*" channel.
+// Returns 0, or -1 when the table is full or the name is taken.
+export fn rz_signal_define_raw(chans: RzChanRouter*, name: string, size: int64, mount: fn(rawptr) -> void, handle: fn(rawptr, string, string) -> int32, view: fn(rawptr) -> RzHtml*, leave: fn(rawptr) -> void) -> int32 {
+  if (chans == 0 || name.length == 0 || rz_signal_find(name) != 0) { return -1; }
+  if (g_rz_signals == 0) {
+    g_rz_signals = (RzSignalDef*)calloc((int64)RZ_SIGNAL_MAX, sizeof(RzSignalDef));
+    if (g_rz_signals == 0) { return -1; }
+    if (rz_chan_define(chans, "signal:*", &rz_signal_join, &rz_signal_in, &rz_signal_leave) != 0) { return -1; }
+  }
+  if (g_rz_signal_count >= RZ_SIGNAL_MAX) { return -1; }
+  var d: RzSignalDef* = &g_rz_signals[g_rz_signal_count];
+  d->name = name;
+  d->size = size;
+  d->mount = mount;
+  d->handle = handle;
+  d->view = view;
+  d->leave = leave;
+  g_rz_signal_count = g_rz_signal_count + 1;
+  return 0;
+}
+
+// ---- HTTP -----------------------------------------------------------------
+
+// The first, plain-HTML render of Signal `name` inside a minimal page. `head`
+// is extra markup for <head> (a stylesheet link, a title).
+export fn rz_signal_page(ctx: RzContext*, name: string, head: string) -> int32 {
+  var def: RzSignalDef* = rz_signal_find(name);
+  if (def == 0) { return rz_ctx_text(ctx, 404, "no such signal\n"); }
+  var state: rawptr = calloc(1, def->size);
+  if (state == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  def->mount(state);
+  var tree: RzHtml* = def->view(state);
+  var b: RaizeBuf* = raize_buf_new();
+  raize_buf_add(b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+  raize_buf_add(b, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+  raize_buf_add(b, head);
+  raize_buf_add(b, "\n</head>\n<body>\n<div id=\"rz-root\" data-signal=\"");
+  raize_buf_add(b, name);
+  raize_buf_add(b, "\">");
+  rz_html_render(tree, b);
+  raize_buf_add(b, "</div>\n<script src=\"/rz/signal.js\"></script>\n</body>\n</html>\n");
+  rz_html_free(tree);
+  def->leave(state);
+  free(state);
+  rz_ctx_html(ctx, 200, raize_buf_str(b));
+  raize_buf_free(b);
+  return 200;
+}
+
+// GET /rz/signal.js: the browser half (embedded at build time).
+export fn rz_signal_js(ctx: RzContext*) -> int32 {
+  rz_resp_bytes(ctx->resp, 200, "text/javascript; charset=utf-8", RZ_SIGNAL_JS);
+  return 200;
+}

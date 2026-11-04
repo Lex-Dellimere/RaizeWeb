@@ -1,0 +1,224 @@
+// examples/todos — a Signal: a real-time page written as Mettle.
+//
+// State is a struct, messages are an enum, update() handles them and view()
+// returns markup. tools/rzpp turns the html"""...""" literals into Mettle
+// (make builds build/todos from the generated app.gen.mettle).
+//
+//   GET /todos          the page, rendered on the server
+//   /signal/websocket   events in, diffs out
+//
+// Run from the repository root:  ./build/todos 8070  then open /todos
+
+import "std/io";
+import "std/mem";
+import "../../framework/str/str";
+import "../../framework/context/context";
+import "../../framework/router/router";
+import "../../framework/server/server";
+import "../../framework/hub/hub";
+import "../../framework/channel/channel";
+import "../../framework/signal/html";
+import "../../framework/signal/signal";
+
+const TODO_MAX: int32 = 32;
+const TITLE_MAX: int64 = 80;
+
+struct Todo {
+  id: int32;
+  title: string;        // owned
+  done: bool;
+}
+
+struct Todos {
+  items: Todo[32];      // literal is TODO_MAX
+  count: int32;
+  next_id: int32;
+  draft: string;        // owned, may be empty
+}
+
+enum TodosMsg { Draft(string), Add, Toggle(int32), Remove(int32), ClearDone }
+
+// ---- state ----------------------------------------------------------------
+
+fn todos_set_draft(s: Todos*, text: string) {
+  if (s->draft.length > 0) { raize_str_free(s->draft); }
+  s->draft = raize_str_empty();
+  if (text.length > 0) { s->draft = raize_str_dup(text); }
+}
+
+fn todos_add(s: Todos*, title: string) {
+  var t: string = raize_str_trim(title);    // a view: copied below
+  if (t.length == 0 || (int64)t.length > TITLE_MAX || s->count >= TODO_MAX) { return; }
+  s->items[s->count].id = s->next_id;
+  s->items[s->count].title = raize_str_dup(t);
+  s->items[s->count].done = false;
+  s->count = s->count + 1;
+  s->next_id = s->next_id + 1;
+}
+
+fn todos_remove_at(s: Todos*, i: int32) {
+  raize_str_free(s->items[i].title);
+  var k: int32 = i;
+  while (k + 1 < s->count) {
+    s->items[k] = s->items[k + 1];
+    k = k + 1;
+  }
+  s->count = s->count - 1;
+}
+
+fn todos_index(s: Todos*, id: int32) -> int32 {
+  var i: int32 = 0;
+  while (i < s->count) {
+    if (s->items[i].id == id) { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+fn todos_mount(s: Todos*) {
+  s->next_id = 1;
+  s->draft = raize_str_empty();
+  todos_add(s, "Write a Signal");
+  todos_add(s, "Ship it");
+}
+
+fn todos_update(s: Todos*, msg: TodosMsg) {
+  match (msg) {
+    case Draft(text): { todos_set_draft(s, text); }
+    case Add: {
+      todos_add(s, s->draft);
+      todos_set_draft(s, "");
+    }
+    case Toggle(id): {
+      var i: int32 = todos_index(s, id);
+      if (i >= 0) { s->items[i].done = !s->items[i].done; }
+    }
+    case Remove(id): {
+      var i: int32 = todos_index(s, id);
+      if (i >= 0) { todos_remove_at(s, i); }
+    }
+    case ClearDone: {
+      var i: int32 = s->count - 1;
+      while (i >= 0) {
+        if (s->items[i].done) { todos_remove_at(s, i); }
+        i = i - 1;
+      }
+    }
+  }
+}
+
+fn todos_leave(s: Todos*) {
+  while (s->count > 0) { todos_remove_at(s, s->count - 1); }
+  todos_set_draft(s, "");
+}
+
+// ---- view -----------------------------------------------------------------
+
+fn open_count(s: Todos*) -> int32 {
+  var n: int32 = 0;
+  var i: int32 = 0;
+  while (i < s->count) {
+    if (!s->items[i].done) { n = n + 1; }
+    i = i + 1;
+  }
+  return n;
+}
+
+fn todo_class(t: Todo) -> string {
+  if (t.done) { return "todo done"; }
+  return "todo";
+}
+
+fn empty_state(message: string) -> RzHtml* {
+  return html"""<p class="empty">{message}</p>""";
+}
+
+fn todos_view(s: Todos*) -> RzHtml* {
+  return html"""
+    <main>
+      <h1>Todos <small>{open_count(s)} open</small></h1>
+      <form on:submit={Add}>
+        <input name="title" value={s->draft} on:input={Draft} placeholder="What needs doing?" autocomplete="off">
+        <button>Add</button>
+      </form>
+      {if s->count == 0 {
+        <.empty_state message="Nothing to do." />
+      } else {
+        <ul>
+          {for i in 0..s->count {
+            <li class={todo_class(s->items[i])}>
+              <button class="check" on:click={Toggle(s->items[i].id)}>{s->items[i].title}</button>
+              <button class="remove" on:click={Remove(s->items[i].id)} aria-label="Remove">×</button>
+            </li>
+          }}
+        </ul>
+        <button class="clear" on:click={ClearDone}>Clear done</button>
+      }}
+    </main>
+  """;
+}
+
+// ---- HTTP -----------------------------------------------------------------
+
+const STYLE: string = "<title>raize todos</title><style>
+:root {{ color-scheme: light dark; --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --accent: #c2410c; }
+@media (prefers-color-scheme: dark) {{ :root {{ --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c; --accent: #fb923c; } }
+body {{ margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+main {{ max-width: 560px; margin: 0 auto; padding: 24px 16px; }
+h1 small {{ color: var(--muted); font-size: 14px; font-weight: normal; }
+form {{ display: flex; gap: 8px; }
+input {{ flex: 1; padding: 8px 10px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+button {{ font: inherit; cursor: pointer; }
+form button, .clear {{ padding: 8px 14px; border: 0; border-radius: 6px; background: var(--accent); color: white; }
+ul {{ list-style: none; padding: 0; }
+li {{ display: flex; border-bottom: 1px solid var(--line); }
+.check {{ flex: 1; text-align: left; padding: 10px 4px; border: 0; background: none; color: inherit; }
+.done .check {{ text-decoration: line-through; color: var(--muted); }
+.remove {{ border: 0; background: none; color: var(--muted); font-size: 18px; }
+.empty {{ color: var(--muted); }
+</style>";
+
+var g_router: RzRouter* = 0;
+
+fn h_todos(ctx: RzContext*) -> int32 {
+  return rz_signal_page(ctx, "todos", STYLE);
+}
+
+fn h_socket_chans(ctx: RzContext*) -> int32 {
+  return rz_chan_upgrade(ctx, g_chans);
+}
+
+var g_chans: RzChanRouter* = 0;
+
+fn handle(ctx: RzContext*) -> int32 {
+  return rz_router_handle(g_router, ctx);
+}
+
+fn main(argc: int32, argv: cstring*) -> int32 {
+  var port: int32 = 8070;
+  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+
+  var hub: RzHub* = rz_hub_new(rz_hub_opts_default());
+  if (hub == 0 || rz_hub_start(hub) != 0) { println("todos: hub failed"); return 1; }
+  g_chans = rz_chan_router_new(hub, 0);
+  // Generated by rzpp from TodosMsg and todos_update(s: Todos*, msg: TodosMsg).
+  var d: int32 = TodosMsg__signal(g_chans, "todos", &todos_mount, &todos_view, &todos_leave);
+  if (g_chans == 0 || d != 0) { println("todos: signal setup failed"); return 1; }
+
+  g_router = rz_router_new();
+  var a0: int32 = rz_router_add(g_router, "GET", "/todos", &h_todos);
+  var a1: int32 = rz_router_add(g_router, "GET", "/signal/websocket", &h_socket_chans);
+  var a2: int32 = rz_router_add(g_router, "GET", "/rz/signal.js", &rz_signal_js);
+  if (a0 != RZ_E_OK || a1 != RZ_E_OK || a2 != RZ_E_OK) { println("todos: routes failed"); return 2; }
+
+  var opts: RzServerOpts = rz_server_opts_default();
+  opts.port = port;
+  var srv: RzServer* = rz_server_new(opts);
+  if (srv == 0 || rz_server_set_handler(srv, &handle) != 0) { println("todos: server failed"); return 3; }
+  println("todos: listening on 127.0.0.1:{port}");
+  var rc: int32 = rz_server_run(srv);
+  rz_hub_free(hub);
+  rz_chan_router_free(g_chans);
+  rz_server_free(srv);
+  return rc;
+}
