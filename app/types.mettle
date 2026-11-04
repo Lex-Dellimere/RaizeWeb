@@ -79,7 +79,7 @@ export struct Rz_Guard {
   check: fn(RzContext*) -> int32;  // RZ_OK continues, else the status it answered
 }
 
-/// internal: app, read by framework/channel wiring (P3-C) through rz__app_channels.
+/// internal: app, read by the channel wiring in app/run through rz__app_channels.
 /// One rz_channel declaration.
 export struct Rz_ChannelDecl {
   pattern: string;                                // "room:*"; owned
@@ -139,7 +139,7 @@ export struct Rz_AppState {
   config: RzConfig;                      // resolved at startup, then frozen
   router: RzRouter*;                     // derived; owned
   chain: RzChain*;                       // derived; owned
-  hub: RzHub*;                           // derived when a Signal exists; owned
+  hub: RzHub*;                           // derived when a Signal or channel exists; owned
   chans: RzChanRouter*;                  // derived with the hub; owned
   server: RzServer*;                     // derived; owned
 }

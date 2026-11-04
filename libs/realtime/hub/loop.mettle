@@ -103,6 +103,7 @@ fn rz_hub_adopt_now(hub: RzHub*, a: RzHubAdopt*, now_ms: int64) {
   while (i < hub->opts.max_conns && hub->slots[i].used) { i = i + 1; }
   if (i == hub->opts.max_conns) {
     rz_sys_close(a->fd);
+    rz__hub_drop(a->drop, a->arg);
     hub->stats_refused = hub->stats_refused + 1;
     return;
   }
@@ -119,6 +120,7 @@ fn rz_hub_adopt_now(hub: RzHub*, a: RzHubAdopt*, now_ms: int64) {
   if (s->ws == 0 || rz_poll_add(hub->poll, s->fd, RZ_EPOLLIN | RZ_EPOLLRDHUP, rz_hub_tag(i)) < 0) {
     if (s->ws != 0) { rz_ws_conn_free(s->ws); }
     rz_sys_close(s->fd);
+    rz__hub_drop(a->drop, a->arg);
     hub->stats_refused = hub->stats_refused + 1;
     return;
   }

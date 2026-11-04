@@ -100,14 +100,29 @@ fn rz__app_socket(ctx: RzContext*) -> int32 {
   return rz_chan_upgrade(ctx, rz__app_current()->state->chans);
 }
 
-// Hub, channel router and the Signal routes, only when a Signal is mounted.
-// (rz_channel declarations are recorded for P3-C, which wires /socket/websocket.)
-fn rz__derive_signals(app: RzApp*) {
+// Each rz_channel declaration onto the channel router, and /socket/websocket for them.
+fn rz__derive_channels(app: RzApp*) {
   var st: Rz_AppState* = app->state;
-  if (st->nsignals == 0) { return; }
+  var n: int32 = 0;
+  var decls: Rz_ChannelDecl* = rz__app_channels(app, &n);
+  for i in 0..n {
+    var d: Rz_ChannelDecl* = &decls[i];
+    if (rz_chan_define(st->chans, d->pattern, d->join, d->handle_in, d->leave) != 0) {
+      rz__app_error(app, "rz_channel(\"{d->pattern}\"): cannot register the channel — declare at most {RZ_CHAN_MAX_DEFS} channels and Signals together");
+    }
+  }
+  rz_get(app, "/socket/websocket", &rz__app_socket);
+}
+
+// Hub and channel router when a Signal or a channel is declared; then the Signal
+// routes and the channel socket. An rz_channel declaration is never left unwired:
+// a hub that cannot start is a startup error (exit 1, nothing served).
+fn rz__derive_sockets(app: RzApp*) {
+  var st: Rz_AppState* = app->state;
+  if (st->nsignals == 0 && st->nchannels == 0) { return; }
   st->hub = rz_hub_new(rz_hub_opts_default());
   if (st->hub == 0 || rz_hub_start(st->hub) != 0) {
-    rz__app_error(app, "cannot start the socket hub — check the process limits on threads and file descriptors");
+    rz__app_error(app, "cannot start the socket hub for the declared Signals and channels — check the process limits on threads and file descriptors");
     return;
   }
   st->chans = rz_chan_router_new(st->hub, 0);
@@ -118,15 +133,18 @@ fn rz__derive_signals(app: RzApp*) {
       rz__app_error(app, "{m->name}_signal: cannot register the Signal — mount fewer than 32 Signals, each once");
     }
   }
-  rz_get(app, "/signal/websocket", &rz__app_socket);
-  rz_get(app, "/rz/signal.js", &rz_signal_js);
+  if (st->nsignals > 0) {
+    rz_get(app, "/signal/websocket", &rz__app_socket);
+    rz_get(app, "/rz/signal.js", &rz_signal_js);
+  }
+  if (st->nchannels > 0) { rz__derive_channels(app); }
 }
 
 // Static dirs, Signals, router, chain and server; every failure is recorded.
 fn rz__app_derive(app: RzApp*) {
   var st: Rz_AppState* = app->state;
   rz__app_derive_statics(app);
-  rz__derive_signals(app);
+  rz__derive_sockets(app);
   var ip: uint32 = 0;
   if (rz__ipv4_parse(rz_config_trusted_proxy(&st->config), &ip)) { rz__peer_set_trusted(ip); }
   st->router = rz_router_new();
@@ -187,7 +205,8 @@ fn rz__app_serve(app: RzApp*) -> int32 {
 /// Runs an app: calls `declare` to record what the app is, resolves configuration
 /// (framework defaults < rz_default < RAIZE_* < --port N), reports every mistake at
 /// once as `<name>: <what> — <fix>`, derives the static mounts, hub, channel
-/// router, Signal routes, JSON APIs and the chain (recover, rz_use* in order, body
+/// router, Signal routes, the channel socket GET /socket/websocket (when any
+/// rz_channel is declared), JSON APIs and the chain (recover, rz_use* in order, body
 /// cap, guards, router), binds, prints `<name>: listening on 127.0.0.1:<port>`,
 /// starts the timers and serves until SIGTERM or SIGINT.
 ///

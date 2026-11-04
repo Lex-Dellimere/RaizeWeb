@@ -1,0 +1,101 @@
+// tests/fixtures/app/channels — rz_channel wired through rz_run (P3-C1, DECISIONS F3):
+// GET /socket/websocket, joins that read the upgrade request through rz_chan_conn,
+// handle_in replies and broadcasts, and rz_broadcast from an HTTP handler.
+// Driven by test.sh and client.py; default port 8084.
+//
+// Channel "room:*":
+//   join     replies {"room", "sid", "user", "peer"} read from rz_chan_conn;
+//            "room:vip" is refused without the sid=s3cret cookie
+//   echo     replies with the payload
+//   shout    rz_chan_broadcast "shout" with the payload to the room
+// POST /announce?topic=T&msg=M   rz_broadcast(T, "news", {"msg": M}) -> 202
+// GET  /leaves                   leave callbacks so far, and how many saw an RzConn
+
+import "raize";
+
+struct ChanUser { name: string; }
+
+var g_ann: ChanUser;         // the signed-in user; set by chan_app, read-only afterwards
+var g_leaves: int32 = 0;     // leave callbacks (atomic)
+var g_leaves_conn: int32 = 0; // leave callbacks that still saw the RzConn (atomic)
+
+// Never refuses: attaches the user when the session cookie is right, so the join
+// can tell a guarded socket from an anonymous one.
+fn chan_who(ctx: RzContext*) -> int32 {
+  if (rz_str_eq(rz_ctx_cookie(ctx, "sid"), "s3cret")) { rz_ctx_set_user(ctx, (rawptr)&g_ann); }
+  return RZ_OK;
+}
+
+fn chan_join(ctx: RzChanCtx*, payload: string) -> int32 {
+  var c: RzConn* = rz_chan_conn(ctx);
+  var sid: string = rz_conn_cookie(c, "sid");
+  if (rz_str_eq(ctx->topic, "room:vip") && !rz_str_eq(sid, "s3cret")) {
+    rz_chan_reply_json(ctx, "{{\"reason\":\"sign in first\"}");
+    return 1;
+  }
+  var u: ChanUser* = (ChanUser*)rz_conn_user(c);
+  var who: string = "none";
+  if (u != 0) { who = u->name; }
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "{{\"room\":\"");
+  rz_json_escape_into(b, ctx->topic);
+  rz_buf_add(b, "\",\"sid\":\"");
+  rz_json_escape_into(b, sid);
+  rz_buf_add(b, "\",\"user\":\"");
+  rz_json_escape_into(b, who);
+  rz_buf_add(b, "\",\"peer\":\"");
+  rz_json_escape_into(b, rz_conn_peer(c));
+  rz_buf_add(b, "\"}");
+  rz_chan_reply_json(ctx, rz_buf_str(b));
+  rz_buf_free(b);
+  return 0;
+}
+
+fn chan_in(ctx: RzChanCtx*, event: string, payload: string) -> int32 {
+  if (rz_str_eq(event, "echo")) {
+    rz_chan_reply_json(ctx, payload);
+    return 0;
+  }
+  if (rz_str_eq(event, "shout")) {
+    rz_chan_broadcast(ctx->router, ctx->topic, "shout", payload);
+    return 0;
+  }
+  rz_chan_reply_json(ctx, "{{\"reason\":\"unknown event\"}");
+  return 1;
+}
+
+fn chan_leave(ctx: RzChanCtx*) {
+  atomic_inc_i32(&g_leaves);
+  if (rz_chan_conn(ctx) != 0) { atomic_inc_i32(&g_leaves_conn); }
+}
+
+// An HTTP worker pushing to every member of a topic.
+fn chan_announce(ctx: RzContext*) -> int32 {
+  var topic: string = rz_ctx_query(ctx, "topic");
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "{{\"msg\":\"");
+  rz_json_escape_into(b, rz_ctx_query(ctx, "msg"));
+  rz_buf_add(b, "\"}");
+  var event: string = "news";
+  var rc: int32 = rz_broadcast(topic, event, rz_buf_str(b));
+  rz_buf_free(b);
+  if (rc != RZ_OK) { return rz_ctx_text(ctx, 503, "not queued ({rc})\n"); }
+  return rz_ctx_text(ctx, 202, "queued\n");
+}
+
+fn chan_leaves(ctx: RzContext*) -> int32 {
+  var n: int32 = atomic_compare_exchange_i32(&g_leaves, 0, 0);
+  var k: int32 = atomic_compare_exchange_i32(&g_leaves_conn, 0, 0);
+  return rz_ctx_text(ctx, 200, "{n} {k}\n");
+}
+
+fn chan_app(app: RzApp*) {
+  g_ann.name = "ann";
+  rz_default(app, "port", "8084");
+  rz_guard(app, "/socket", &chan_who);
+  rz_channel(app, "room:*", &chan_join, &chan_in, &chan_leave);
+  rz_post(app, "/announce", &chan_announce);
+  rz_get(app, "/leaves", &chan_leaves);
+}
+
+fn main() -> int32 { return rz_run("channels", &chan_app); }

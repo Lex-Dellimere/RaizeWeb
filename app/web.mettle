@@ -176,7 +176,8 @@ export fn rz__app_run_guards(ctx: RzContext*, path: string) -> int32 {
 }
 
 /// Declares a channel topic pattern for Phoenix-protocol sockets ("room:*" matches
-/// "room:lobby"). join(ctx, payload) admits a member (RZ_OK) or refuses;
+/// "room:lobby"); rz_run serves every declared channel on GET /socket/websocket
+/// (phoenix.js's default path), behind any guard whose prefix covers it. join(ctx, payload) admits a member (RZ_OK) or refuses;
 /// handle_in(ctx, event, payload) handles each message; leave(ctx) cleans up.
 ///
 /// in:      app        the app
@@ -214,7 +215,7 @@ export fn rz_channel(app: RzApp*, pattern: string, join: fn(RzChanCtx*, string) 
   st->nchannels = st->nchannels + 1;
 }
 
-/// internal: framework/channel wiring in app/run (P3-C). The recorded rz_channel
+/// internal: the channel wiring in app/run. The recorded rz_channel
 /// declarations, in declaration order.
 /// in:      app the app; count receives how many
 /// returns: the first declaration (count of them follow), valid until rz_run returns
@@ -222,4 +223,26 @@ export fn rz_channel(app: RzApp*, pattern: string, join: fn(RzChanCtx*, string) 
 export fn rz__app_channels(app: RzApp*, count: int32*) -> Rz_ChannelDecl* {
   *count = app->state->nchannels;
   return &app->state->channels[0];
+}
+
+/// Broadcasts `event` with `payload_json` to every member of `topic`, from any thread
+/// (HTTP handlers, rz_every ticks, channel callbacks). Takes no app or context: one
+/// app runs per process (rz_run), so the call reads like Phoenix's
+/// Endpoint.broadcast and works where no RzContext exists (timers).
+///
+/// in:      topic         the exact topic ("room:lobby"); copied
+///          event         the event name; copied
+///          payload_json  a complete JSON value; copied
+/// returns: RZ_OK when queued (members get it on the hub thread, in call order);
+///          RZ_E_UNSUPPORTED when no channel or Signal is declared or rz_run is not
+///          serving; RZ_E_FULL when the hub's mailbox is full (nothing was queued)
+/// owns:    nothing kept from the caller
+/// thread:  any, while rz_run serves
+/// example:
+///   fn lobby_tick(n: int64) { rz_broadcast("room:lobby", "tick", "{{\"n\":{n}}"); }
+export fn rz_broadcast(topic: string, event: string, payload_json: string) -> int32 {
+  var app: RzApp* = rz__app_current();
+  if (app == 0 || app->state->chans == 0) { return RZ_E_UNSUPPORTED; }
+  if (!rz_chan_post_broadcast(app->state->chans, topic, event, payload_json)) { return RZ_E_FULL; }
+  return RZ_OK;
 }

@@ -43,6 +43,7 @@ export fn rz_chan_ctx(r: RzChanRouter*, sock: int64, topic: string, join_ref: st
   c.join_ref = join_ref;
   c.state = state;
   c.reply = 0;
+  c.conn = 0;
   return c;
 }
 
@@ -53,11 +54,28 @@ export fn rz_chan_remove(r: RzChanRouter*, i: int32) {
   var def: RzChannelDef* = &r->defs[m->def];
   if (def->leave != 0) {
     var c: RzChanCtx = rz_chan_ctx(r, m->sock, m->topic, m->join_ref, m->state);
+    c.conn = m->conn;
     def->leave(&c);
   }
   rz_str_free(m->topic);
   rz_str_free(m->join_ref);
   memset((rawptr)m, 0, sizeof(RzChanMember));
+}
+
+/// The request that opened this member's socket: cookies, peer address and the user
+/// a guard set, copied on the worker at upgrade time.
+///
+/// in:      ctx a channel callback's context (join, handle_in or leave)
+/// returns: the connection (read it with rz_conn_cookie, rz_conn_user, rz_conn_peer),
+///          or 0 when the socket was not opened through rz_chan_upgrade
+/// owns:    nothing; the socket owns it and frees it when it closes (valid during
+///          the callback; do not keep it past leave)
+/// thread:  the hub thread (channel callbacks)
+/// example:
+///   if (!rz_str_eq(rz_conn_cookie(rz_chan_conn(ctx), "sid"), "s3cret")) { return 1; }
+export fn rz_chan_conn(ctx: RzChanCtx*) -> RzConn* {
+  if (ctx == 0) { return 0; }
+  return ctx->conn;
 }
 
 // Sets the JSON body of the reply to the event being handled (join or

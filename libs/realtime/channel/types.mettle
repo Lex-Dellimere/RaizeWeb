@@ -26,6 +26,7 @@
 
 import "raize_core/str/str";
 import "raize_core/context/arena";
+import "raize_core/context/conn";
 import "../hub/hub";
 
 export const RZ_CHAN_MAX_DEFS: int32 = 16;
@@ -39,6 +40,7 @@ export struct RzChanCtx {
   join_ref: string;      // raw JSON
   state: rawptr;         // the member's state; join sets it
   reply: RzBuf*;      // JSON response body for this event's reply
+  conn: RzConn*;         // the socket's upgrade request (rz_chan_conn); borrowed
 }
 
 export struct RzChannelDef {
@@ -55,6 +57,14 @@ export struct RzChanMember {
   join_ref: string;      // owned raw JSON
   def: int32;
   state: rawptr;
+  conn: RzConn*;         // the socket's RzConn; borrowed from its Rz_ChanSock
+}
+
+// internal: channel. Per-socket state: the router and what the socket kept from
+// its upgrade request. Made on the worker in rz_chan_upgrade, freed in on_close.
+export struct Rz_ChanSock {
+  router: RzChanRouter*;
+  conn: RzConn*;         // owned
 }
 
 // `handler` must stay the first field: the hub passes the handler pointer to

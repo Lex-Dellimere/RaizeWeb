@@ -91,6 +91,7 @@ export fn rz_hub_free(hub: RzHub*) {
     if (m.kind == RZ_HUB_MSG_ADOPT) {
       var a: RzHubAdopt* = (RzHubAdopt*)m.ptr;
       rz_sys_close(a->fd);
+      rz__hub_drop(a->drop, a->arg);
       if (a->early != 0) { free((rawptr)a->early); }
       free((rawptr)a);
     } else if (m.kind == RZ_HUB_MSG_CALL) {
@@ -119,6 +120,7 @@ export fn rz_hub_open_count(hub: RzHub*) -> int32 {
 // writes the 101, makes the socket nonblocking and posts it to the hub.
 fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len: int64) -> int32 {
   var hub: RzHub* = (RzHub*)up->owner;
+  var hu: Rz_HubUp* = (Rz_HubUp*)up->arg;
   var head: RzBuf* = rz_buf_new();
   var fail: int32 = 0;
   if (rz_ws_write_101(up->key, "", head) < 0) { fail = 1; }
@@ -138,6 +140,7 @@ fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len:
   if (fail != 0) {
     rz_buf_free(head);
     if (a != 0) { free((rawptr)a); }
+    rz__hub_drop(hu->drop, hu->arg);
     atomic_dec_i32(&hub->reserved);
     return -1;
   }
@@ -153,8 +156,9 @@ fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len:
   var head_len: int64 = head->len;
   rz_buf_free(head);
   a->fd = fd;
-  a->handler = (RzHubHandler*)up->arg;
-  a->arg = up->arg;
+  a->handler = hu->handler;
+  a->arg = hu->arg;
+  a->drop = hu->drop;
   var m: RzPollMsg;
   m.kind = RZ_HUB_MSG_ADOPT;
   m.a = 0;
@@ -162,6 +166,7 @@ fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len:
   m.ptr = (rawptr)a;
   if (sent < head_len || rz_sys_set_nonblock(fd) < 0 || !rz_poll_post(hub->poll, m)) {
     rz_sys_close(fd);
+    rz__hub_drop(a->drop, a->arg);
     if (a->early != 0) { free((rawptr)a->early); }
     free((rawptr)a);
     atomic_dec_i32(&hub->reserved);
@@ -171,34 +176,60 @@ fn rz_hub_adopt_from_worker(up: RzUpgrade*, fd: int64, early: uint8*, early_len:
 
 // Accepts the current request as a WebSocket for `handler`, or answers the
 // refusal (400/405/426, or 503 when the hub is full or stopped). Returns the
-// status, as router handlers do: 101 when the upgrade was accepted.
+// status, as router handlers do: 101 when the upgrade was accepted. on_open
+// receives the handler pointer itself.
 export fn rz_hub_upgrade(ctx: RzContext*, hub: RzHub*, handler: RzHubHandler*) -> int32 {
-  if (ctx == 0) { return -1; }
+  return rz_hub_upgrade_with(ctx, hub, handler, (rawptr)handler, 0);
+}
+
+/// rz_hub_upgrade with a per-socket argument: on_open receives `arg` instead of the
+/// handler pointer (channels pass the socket's RzConn this way).
+///
+/// in:      ctx the upgrade request; hub the hub; handler the callbacks
+///          arg   handed to on_open on the hub thread
+///          drop  frees `arg` on every path where on_open never runs (refusal,
+///                full mailbox, hub freed first); 0 when `arg` needs no freeing
+/// returns: the status: 101 accepted, else the refusal already answered
+/// owns:    takes `arg`: on_open owns it after it ran, `drop` frees it otherwise
+///          (a request the server aborts after the handler returned leaks it)
+/// thread:  the HTTP worker serving the request
+/// example:
+///   return rz_hub_upgrade_with(ctx, hub, &h, (rawptr)st, &st_free);
+export fn rz_hub_upgrade_with(ctx: RzContext*, hub: RzHub*, handler: RzHubHandler*, arg: rawptr, drop: fn(rawptr) -> void) -> int32 {
+  if (ctx == 0) { rz__hub_drop(drop, arg); return -1; }
   var status: int32 = rz_ws_check_upgrade(ctx->req);
   if (status != RZ_WS_UPGRADE_OK) {
+    rz__hub_drop(drop, arg);
     rz_ws_refuse(ctx->resp, status);
     return status;
   }
   if (hub == 0 || hub->running == 0 || handler == 0) {
+    rz__hub_drop(drop, arg);
     rz_resp_text(ctx->resp, 503, "websocket hub unavailable\n");
     return 503;
   }
   var reserved: int32 = atomic_inc_i32(&hub->reserved);
   if (hub->open + reserved > hub->opts.max_conns) {
     atomic_dec_i32(&hub->reserved);
+    rz__hub_drop(drop, arg);
     ctx->resp->close_after = true;
     rz_resp_text(ctx->resp, 503, "too many websockets\n");
     return 503;
   }
   var up: RzUpgrade* = (RzUpgrade*)rz_arena_alloc_zeroed(ctx->arena, sizeof(RzUpgrade));
-  if (up == 0) {
+  var hu: Rz_HubUp* = (Rz_HubUp*)rz_arena_alloc_zeroed(ctx->arena, sizeof(Rz_HubUp));
+  if (up == 0 || hu == 0) {
     atomic_dec_i32(&hub->reserved);
+    rz__hub_drop(drop, arg);
     rz_resp_text(ctx->resp, 500, "out of memory\n");
     return 500;
   }
+  hu->handler = handler;
+  hu->arg = arg;
+  hu->drop = drop;
   up->adopt = &rz_hub_adopt_from_worker;
   up->owner = (rawptr)hub;
-  up->arg = (rawptr)handler;
+  up->arg = (rawptr)hu;
   up->key = rz_req_header(ctx->req, "sec-websocket-key");
   ctx->upgrade = up;
   ctx->resp->status = 101;

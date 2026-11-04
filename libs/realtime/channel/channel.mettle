@@ -24,15 +24,12 @@
 import "std/mem";
 import "raize_core/str/str";
 import "raize_core/context/context";
+import "raize_core/context/conn";
 import "../hub/hub";
 import "../ws/frame";
 import "wire";
 import "types";
 import "members";
-
-fn rz_chan_router_of(arg: rawptr) -> RzChanRouter* {
-  return (RzChanRouter*)arg;
-}
 
 fn rz_chan_def_for(r: RzChanRouter*, topic: string) -> int32 {
   var i: int32 = 0;
@@ -56,7 +53,7 @@ fn rz_chan_send_reply(r: RzChanRouter*, sock: int64, m: RzChanMsg*, status: stri
   rz_hub_send(r->hub, sock, rz_buf_str(r->out));
 }
 
-fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*) {
+fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*, conn: RzConn*) {
   var d: int32 = rz_chan_def_for(r, m->topic);
   if (d < 0) {
     rz_chan_send_reply(r, sock, m, "error", "{{\"reason\":\"unmatched topic\"}");
@@ -74,8 +71,10 @@ fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*) 
   mem->topic = rz_str_dup(m->topic);
   mem->join_ref = rz_str_dup(m->join_ref);
   mem->def = d;
+  mem->conn = conn;
   var c: RzChanCtx = rz_chan_ctx(r, sock, mem->topic, mem->join_ref, 0);
   c.reply = reply;
+  c.conn = conn;
   var rc: int32 = 0;
   if (r->defs[d].join != 0) { rc = r->defs[d].join(&c, m->payload); }
   if (rc != 0) {
@@ -106,6 +105,7 @@ fn rz_chan_on_event(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*)
   var mem: RzChanMember* = &r->members[i];
   var c: RzChanCtx = rz_chan_ctx(r, sock, mem->topic, mem->join_ref, mem->state);
   c.reply = reply;
+  c.conn = mem->conn;
   var rc: int32 = 0;
   var def: RzChannelDef* = &r->defs[mem->def];
   if (def->handle_in != 0) { rc = def->handle_in(&c, m->event, m->payload); }
@@ -119,11 +119,20 @@ fn rz_chan_on_event(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*)
 }
 
 fn rz_chan_on_open(hub: RzHub*, sock: int64, arg: rawptr) -> rawptr {
-  return arg;    // the router is the per-socket state
+  return arg;    // the Rz_ChanSock rz_chan_upgrade made is the per-socket state
+}
+
+// Frees a socket's state (on_close, or the hub's drop when it never opened).
+fn rz__chan_sock_free(arg: rawptr) {
+  var cs: Rz_ChanSock* = (Rz_ChanSock*)arg;
+  if (cs == 0) { return; }
+  rz__conn_free(cs->conn);
+  free(arg);
 }
 
 fn rz_chan_on_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payload: string) -> int32 {
-  var r: RzChanRouter* = rz_chan_router_of(state);
+  var cs: Rz_ChanSock* = (Rz_ChanSock*)state;
+  var r: RzChanRouter* = cs->router;
   rz_arena_reset(r->scratch);
   var m: RzChanMsg;
   if (op != RZ_WS_OP_TEXT || !rz_chan_decode(payload, r->scratch, &m)) {
@@ -134,7 +143,7 @@ fn rz_chan_on_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payloa
   if (rz_str_eq(m.topic, "phoenix") && rz_str_eq(m.event, "heartbeat")) {
     rz_chan_send_reply(r, sock, &m, "ok", "");
   } else if (rz_str_eq(m.event, "phx_join")) {
-    rz_chan_on_join(r, sock, &m, reply);
+    rz_chan_on_join(r, sock, &m, reply, cs->conn);
   } else {
     rz_chan_on_event(r, sock, &m, reply);
   }
@@ -143,13 +152,15 @@ fn rz_chan_on_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payloa
 }
 
 fn rz_chan_on_close(hub: RzHub*, sock: int64, state: rawptr) {
-  var r: RzChanRouter* = rz_chan_router_of(state);
-  if (r == 0) { return; }
+  var cs: Rz_ChanSock* = (Rz_ChanSock*)state;
+  if (cs == 0) { return; }
+  var r: RzChanRouter* = cs->router;
   var i: int32 = 0;
   while (i < r->max_members) {
     if (r->members[i].used && r->members[i].sock == sock) { rz_chan_remove(r, i); }
     i = i + 1;
   }
+  rz__chan_sock_free(state);   // leave callbacks above still saw the RzConn
 }
 
 // Creates a channel router on `hub`. max_members 0 means the default.
@@ -205,8 +216,26 @@ export fn rz_chan_define(r: RzChanRouter*, pattern: string, join: fn(RzChanCtx*,
   return 0;
 }
 
-// Route handler body for the channel socket endpoint.
+/// Route handler body for the channel socket endpoint. Copies what the socket keeps
+/// from this request (RzConn: cookies, peer, the guard's user) so join, handle_in and
+/// leave can read it through rz_chan_conn.
+///
+/// in:      ctx the upgrade request (guards already ran); r the channel router
+/// returns: the status: 101 accepted, else the refusal already answered (503 when
+///          `r` is 0 or its hub is not running, 500 when out of memory)
+/// owns:    the RzConn copy belongs to the socket and is freed when it closes
+/// thread:  the HTTP worker serving the request
+/// example:
+///   fn h_socket(ctx: RzContext*) -> int32 { return rz_chan_upgrade(ctx, g_chans); }
 export fn rz_chan_upgrade(ctx: RzContext*, r: RzChanRouter*) -> int32 {
   if (r == 0) { return rz_hub_upgrade(ctx, 0, 0); }
-  return rz_hub_upgrade(ctx, r->hub, &r->handler);
+  var cs: Rz_ChanSock* = (Rz_ChanSock*)calloc(1, sizeof(Rz_ChanSock));
+  if (cs == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  cs->router = r;
+  cs->conn = rz__conn_from_ctx(ctx);
+  if (cs->conn == 0) {
+    free((rawptr)cs);
+    return rz_ctx_text(ctx, 500, "out of memory\n");
+  }
+  return rz_hub_upgrade_with(ctx, r->hub, &r->handler, (rawptr)cs, &rz__chan_sock_free);
 }

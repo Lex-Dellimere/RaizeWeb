@@ -73,6 +73,14 @@ export struct RzHubAdopt {
   arg: rawptr;
   early: uint8*;          // bytes read past the upgrade request (owned)
   early_len: int64;
+  drop: fn(rawptr) -> void;   // frees `arg` when the socket never opens (0 = nothing to free)
+}
+
+// internal: hub. What rz_hub_upgrade_with hands the worker's adopt step (arena-owned).
+export struct Rz_HubUp {
+  handler: RzHubHandler*;
+  arg: rawptr;                // passed to on_open
+  drop: fn(rawptr) -> void;   // frees `arg` on every path where on_open never runs
 }
 
 // "Run this on the hub thread": the general way in from another thread
@@ -112,4 +120,13 @@ export fn rz_hub_opts_default() -> RzHubOpts {
 
 export fn rz_hub_sock_slot(sock: int64) -> int32 {
   return (int32)(sock & 0xFFFF);
+}
+
+/// internal: hub/hub, hub/loop. Frees an adoption's on_open argument when the socket
+/// will never open (refused, mailbox full, hub freed first).
+/// in:      drop the free function (0 = nothing to free); arg its argument
+/// returns: nothing
+/// owns:    takes `arg` when drop is set
+export fn rz__hub_drop(drop: fn(rawptr) -> void, arg: rawptr) {
+  if (drop != 0) { drop(arg); }
 }
