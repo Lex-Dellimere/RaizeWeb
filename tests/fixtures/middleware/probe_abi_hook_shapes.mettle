@@ -24,7 +24,7 @@ struct Hooks {
 
 fn x_bearer(req: RzRequest*, out: string*) -> int32 {
   var v: string = rz_hdr_in_get(req, "Authorization");
-  if (!raize_str_starts(v, "Bearer ")) { return 0; }
+  if (!rz_str_starts(v, "Bearer ")) { return 0; }
   out->chars = v.chars + 7;
   out->length = v.length - 7;
   return 1;
@@ -32,7 +32,7 @@ fn x_bearer(req: RzRequest*, out: string*) -> int32 {
 
 fn x_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
   if (token == 0) { return 401; }
-  if (!raize_str_eq(*token, "good")) { return 401; }
+  if (!rz_str_eq(*token, "good")) { return 401; }
   if (principal != 0) { *principal = (rawptr)ctx; }
   return 200;
 }
@@ -54,7 +54,7 @@ fn main() -> int32 {
   var h: Hooks;
   h.extract = &x_bearer;
   h.verify = &x_verify;
-  var token: string = raize_str_empty();
+  var token: string = rz_str_empty();
   var found: int32 = h.extract(&req, &token);
   var principal: rawptr = 0;
   var verdict: int32 = h.verify(&ctx, &token, &principal);

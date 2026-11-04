@@ -38,7 +38,7 @@ export struct RzChanCtx {
   topic: string;         // owned by the member; valid during the callback
   join_ref: string;      // raw JSON
   state: rawptr;         // the member's state; join sets it
-  reply: RaizeBuf*;      // JSON response body for this event's reply
+  reply: RzBuf*;      // JSON response body for this event's reply
 }
 
 export struct RzChannelDef {
@@ -67,5 +67,5 @@ export struct RzChanRouter {
   members: RzChanMember*;
   max_members: int32;
   scratch: RzArena*;           // per-message decode space (hub thread)
-  out: RaizeBuf*;              // per-message encode space (hub thread)
+  out: RzBuf*;              // per-message encode space (hub thread)
 }

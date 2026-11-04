@@ -13,25 +13,25 @@ import "framework/str/str";
 import "static";
 
 @test fn t_rz_static_mime() -> int32 {
-  if (!raize_str_eq(rz_static_mime("index.html"), RZ_STATIC_CT_HTML)) { return 1; }
-  if (!raize_str_eq(rz_static_mime("a/b.htm"), RZ_STATIC_CT_HTML)) { return 2; }
-  if (!raize_str_eq(rz_static_mime("site.css"), RZ_STATIC_CT_CSS)) { return 3; }
-  if (!raize_str_eq(rz_static_mime("app.js"), RZ_STATIC_CT_JS)) { return 4; }
-  if (!raize_str_eq(rz_static_mime("mod.mjs"), RZ_STATIC_CT_JS)) { return 5; }
-  if (!raize_str_eq(rz_static_mime("data.json"), RZ_STATIC_CT_JSON)) { return 6; }
-  if (!raize_str_eq(rz_static_mime("logo.svg"), RZ_STATIC_CT_SVG)) { return 7; }
-  if (!raize_str_eq(rz_static_mime("notes.txt"), RZ_STATIC_CT_TXT)) { return 8; }
-  if (!raize_str_eq(rz_static_mime("pic.png"), RZ_STATIC_CT_PNG)) { return 9; }
-  if (!raize_str_eq(rz_static_mime("photo.JPG"), RZ_STATIC_CT_JPG)) { return 10; }
-  if (!raize_str_eq(rz_static_mime("font.woff2"), RZ_STATIC_CT_WOFF2)) { return 11; }
-  if (!raize_str_eq(rz_static_mime("mod.wasm"), RZ_STATIC_CT_WASM)) { return 12; }
+  if (!rz_str_eq(rz_static_mime("index.html"), RZ_STATIC_CT_HTML)) { return 1; }
+  if (!rz_str_eq(rz_static_mime("a/b.htm"), RZ_STATIC_CT_HTML)) { return 2; }
+  if (!rz_str_eq(rz_static_mime("site.css"), RZ_STATIC_CT_CSS)) { return 3; }
+  if (!rz_str_eq(rz_static_mime("app.js"), RZ_STATIC_CT_JS)) { return 4; }
+  if (!rz_str_eq(rz_static_mime("mod.mjs"), RZ_STATIC_CT_JS)) { return 5; }
+  if (!rz_str_eq(rz_static_mime("data.json"), RZ_STATIC_CT_JSON)) { return 6; }
+  if (!rz_str_eq(rz_static_mime("logo.svg"), RZ_STATIC_CT_SVG)) { return 7; }
+  if (!rz_str_eq(rz_static_mime("notes.txt"), RZ_STATIC_CT_TXT)) { return 8; }
+  if (!rz_str_eq(rz_static_mime("pic.png"), RZ_STATIC_CT_PNG)) { return 9; }
+  if (!rz_str_eq(rz_static_mime("photo.JPG"), RZ_STATIC_CT_JPG)) { return 10; }
+  if (!rz_str_eq(rz_static_mime("font.woff2"), RZ_STATIC_CT_WOFF2)) { return 11; }
+  if (!rz_str_eq(rz_static_mime("mod.wasm"), RZ_STATIC_CT_WASM)) { return 12; }
   // unknown and missing extensions are octet-stream, never sniffed
-  if (!raize_str_eq(rz_static_mime("blob.bin"), RZ_STATIC_CT_OCTET)) { return 13; }
-  if (!raize_str_eq(rz_static_mime("noext"), RZ_STATIC_CT_OCTET)) { return 14; }
-  if (!raize_str_eq(rz_static_mime("archive.tar.gz"), RZ_STATIC_CT_OCTET)) { return 15; }
-  if (!raize_str_eq(rz_static_mime("trailing."), RZ_STATIC_CT_OCTET)) { return 16; }
+  if (!rz_str_eq(rz_static_mime("blob.bin"), RZ_STATIC_CT_OCTET)) { return 13; }
+  if (!rz_str_eq(rz_static_mime("noext"), RZ_STATIC_CT_OCTET)) { return 14; }
+  if (!rz_str_eq(rz_static_mime("archive.tar.gz"), RZ_STATIC_CT_OCTET)) { return 15; }
+  if (!rz_str_eq(rz_static_mime("trailing."), RZ_STATIC_CT_OCTET)) { return 16; }
   // a dot in a directory name is not an extension
-  if (!raize_str_eq(rz_static_mime("v1.2/file"), RZ_STATIC_CT_OCTET)) { return 17; }
+  if (!rz_str_eq(rz_static_mime("v1.2/file"), RZ_STATIC_CT_OCTET)) { return 17; }
   return 0;
 }
 
@@ -56,12 +56,12 @@ import "static";
   nb[0] = 97;   // a
   nb[1] = 0;
   nb[2] = 98;   // b
-  if (rz_static_rel_ok(raize_str_view(&nb[0], 3))) { return 16; }
+  if (rz_static_rel_ok(rz_str_view(&nb[0], 3))) { return 16; }
   // length cap, not a growing buffer
   var long: uint8[1025];
   var i: int64 = 0;
   while (i < 1025) { long[i] = 97; i = i + 1; }
-  if (rz_static_rel_ok(raize_str_view(&long[0], 1025))) { return 17; }
+  if (rz_static_rel_ok(rz_str_view(&long[0], 1025))) { return 17; }
   return 0;
 }
 
@@ -69,9 +69,9 @@ import "static";
   var b: uint8[64];
   var n: int64 = rz_static_join("/srv/www", "a/b.txt", &b[0], 64);
   if (n != 16) { return 1; }
-  if (!raize_str_eq(raize_str_view(&b[0], n), "/srv/www/a/b.txt")) { return 2; }
+  if (!rz_str_eq(rz_str_view(&b[0], n), "/srv/www/a/b.txt")) { return 2; }
   n = rz_static_join("/", "x.txt", &b[0], 64);
-  if (!raize_str_eq(raize_str_view(&b[0], n), "/x.txt")) { return 3; }
+  if (!rz_str_eq(rz_str_view(&b[0], n), "/x.txt")) { return 3; }
   if (rz_static_join("/srv/www", "a/b.txt", &b[0], 8) != -1) { return 4; }
 
   if (!rz_static_within("/srv/www", "/srv/www/a.txt")) { return 5; }
@@ -88,7 +88,7 @@ import "static";
 @test fn t_rz_static_etag_and_match() -> int32 {
   var b: uint8[96];
   var e: string = rz_static_etag(5, (uint64)48879, &b[0], 96);
-  if (!raize_str_eq(e, "\"5-beef\"")) { return 1; }
+  if (!rz_str_eq(e, "\"5-beef\"")) { return 1; }
   if (!rz_static_etag_match(e, e)) { return 2; }
   if (!rz_static_etag_match("W/\"5-beef\"", e)) { return 3; }
   if (!rz_static_etag_match("\"other\", \"5-beef\"", e)) { return 4; }
@@ -100,14 +100,14 @@ import "static";
   if (rz_static_etag_match("\"5-bee\"", e)) { return 9; }
   // size and hash both participate, so a same-size edit changes the tag
   var b2: uint8[96];
-  if (raize_str_eq(rz_static_etag(5, (uint64)48880, &b2[0], 96), e)) { return 10; }
+  if (rz_str_eq(rz_static_etag(5, (uint64)48880, &b2[0], 96), e)) { return 10; }
   return 0;
 }
 
 @test fn t_rz_static_cache_control() -> int32 {
   var b: uint8[64];
-  if (!raize_str_eq(rz_static_cache_control(60, &b[0], 64), "public, max-age=60")) { return 1; }
-  if (!raize_str_eq(rz_static_cache_control(0, &b[0], 64), "public, max-age=0")) { return 2; }
+  if (!rz_str_eq(rz_static_cache_control(60, &b[0], 64), "public, max-age=60")) { return 1; }
+  if (!rz_str_eq(rz_static_cache_control(0, &b[0], 64), "public, max-age=0")) { return 2; }
   if (rz_static_cache_control(60, &b[0], 8).length != 0) { return 3; }
   return 0;
 }

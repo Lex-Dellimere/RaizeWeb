@@ -132,7 +132,7 @@ export fn rz_recover_fail(ctx: RzContext*, status: int32) -> int32 {
   }
   var arena_note: string = "no detail";
   if (dn > 0) {
-    arena_note = raize_str_view(&detail[0], dn);
+    arena_note = rz_str_view(&detail[0], dn);
   } else if (ctx != 0) {
     if (ctx->arena == 0) {
       atomic_inc_i32(&cfg->stats.no_arena);
@@ -235,14 +235,14 @@ fn t_rec_term_empty_500(ctx: RzContext*) -> int32 {
   if (rz_recover_use(r) != 0) { return 5; }
   if (rz_mw_recover(&ctx, &t_rec_term_secret) != 500) { return 6; }
   // the handler's detail is replaced, never forwarded
-  if (!raize_str_eq(raize_buf_str(resp->body), RZ_RECOVER_GENERIC_BODY)) { return 7; }
-  if (raize_str_contains(raize_buf_str(resp->body), "hunter2")) { return 8; }
+  if (!rz_str_eq(rz_buf_str(resp->body), RZ_RECOVER_GENERIC_BODY)) { return 7; }
+  if (rz_str_contains(rz_buf_str(resp->body), "hunter2")) { return 8; }
   if (resp->status != 500) { return 9; }
   if (ctx.status != 500) { return 10; }
-  if (!raize_str_eq(rz_resp_header_get(resp, "Content-Type"), RZ_RECOVER_GENERIC_CT)) { return 11; }
+  if (!rz_str_eq(rz_resp_header_get(resp, "Content-Type"), RZ_RECOVER_GENERIC_CT)) { return 11; }
   // a traceable header the handler set is kept (an X-Request-Id on a 500 is the
   // one thing that makes the failure findable)
-  if (!raize_str_eq(rz_resp_header_get(resp, "X-Request-Id"), "abc123")) { return 12; }
+  if (!rz_str_eq(rz_resp_header_get(resp, "X-Request-Id"), "abc123")) { return 12; }
   var st: RzRecoverStats = rz_recover_stats(r);
   if (st.entered != 1) { return 13; }
   if (st.handled != 1) { return 14; }
@@ -264,15 +264,15 @@ fn t_rec_term_empty_500(ctx: RzContext*) -> int32 {
   if (r == 0) { return 4; }
   defer rz_recover_free(r);
   if (rz_recover_use(r) != 0) { return 5; }
-  // rz_ctx_text answers 0 ("the response is built"): recovery passes that
+  // rz_ctx_text returns the status it set (404): recovery passes a 4xx
   // through untouched, and the status stays on the response.
-  if (rz_mw_recover(&ctx, &t_rec_term_404) != 0) { return 6; }
+  if (rz_mw_recover(&ctx, &t_rec_term_404) != 404) { return 6; }
   if (resp->status != 404) { return 7; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "no such page\n")) { return 8; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "no such page\n")) { return 8; }
   // an abort is a decision (401/403/404 keep their body), not a failure
   if (rz_mw_recover(&ctx, &t_rec_term_abort) != 0) { return 9; }
   if (resp->status != 401) { return 10; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "unauthorized\n")) { return 11; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "unauthorized\n")) { return 11; }
   var st: RzRecoverStats = rz_recover_stats(r);
   if (st.handled != 0) { return 12; }
   return 0;
@@ -301,7 +301,7 @@ fn t_rec_term_empty_500(ctx: RzContext*) -> int32 {
   resp->status = 0;
   ctx.status = 0;
   if (rz_mw_recover(&ctx, &t_rec_term_bogus) != 500) { return 6; }
-  if (!raize_str_eq(raize_buf_str(resp->body), RZ_RECOVER_GENERIC_BODY)) { return 7; }
+  if (!rz_str_eq(rz_buf_str(resp->body), RZ_RECOVER_GENERIC_BODY)) { return 7; }
   if (resp->status != 500) { return 8; }
   var st: RzRecoverStats = rz_recover_stats(r);
   if (st.handled != 1) { return 9; }

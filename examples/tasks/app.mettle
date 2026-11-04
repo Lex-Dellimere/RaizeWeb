@@ -51,7 +51,7 @@ const TASK_TITLE_MAX: int64 = 120;
 
 struct RzTask {
   id: int32;
-  title: string;        // owned (raize_str_dup); freed on delete/exit
+  title: string;        // owned (rz_str_dup); freed on delete/exit
   done: bool;
 }
 
@@ -85,8 +85,8 @@ fn task_index(store: RzTaskStore*, id: int32) -> int32 {
   return -1;
 }
 
-// Like raize_str_dup, but reports allocation failure with a null view instead
-// of the empty literal: raize_str_free must never see a literal pointer.
+// Like rz_str_dup, but reports allocation failure with a null view instead
+// of the empty literal: rz_str_free must never see a literal pointer.
 fn task_dup(s: string) -> string {
   var n: int64 = (int64)s.length;
   var p: uint8* = (uint8*)malloc(n + 1);
@@ -102,47 +102,27 @@ fn task_dup(s: string) -> string {
     i = i + 1;
   }
   p[n] = 0;
-  return raize_str_view(p, n);
+  return rz_str_view(p, n);
 }
 
-fn task_json_into(buf: RaizeBuf*, t: RzTask*, comma: bool) {
-  if (comma) { raize_buf_add(buf, ","); }
-  raize_buf_add(buf, "{{\"id\":");
-  raize_buf_add_int(buf, (int64)t->id);
-  raize_buf_add(buf, ",\"title\":\"");
+fn task_json_into(buf: RzBuf*, t: RzTask*, comma: bool) {
+  if (comma) { rz_buf_add(buf, ","); }
+  rz_buf_add(buf, "{{\"id\":");
+  rz_buf_add_int(buf, (int64)t->id);
+  rz_buf_add(buf, ",\"title\":\"");
   rz_json_escape_into(buf, t->title);
-  raize_buf_add(buf, "\",\"done\":");
+  rz_buf_add(buf, "\",\"done\":");
   if (t->done) {
-    raize_buf_add(buf, "true");
+    rz_buf_add(buf, "true");
   } else {
-    raize_buf_add(buf, "false");
+    rz_buf_add(buf, "false");
   }
-  raize_buf_add(buf, "}");
-}
-
-fn respond_json(ctx: RzContext*, status: int32) -> int32 {
-  var rc: int32 = rz_resp_set_content_type(ctx->resp, RZ_CT_JSON);
-  if (rc != 0) { return 500; }
-  ctx->resp->status = status;
-  ctx->status = status;
-  return status;
-}
-
-// The router treats any handler return outside 100..599 as a server error, so
-// a handler that uses rz_ctx_* must still return the status it just built.
-fn json_status(ctx: RzContext*, status: int32, body: string) -> int32 {
-  rz_ctx_json(ctx, status, body);
-  return status;
-}
-
-fn empty_status(ctx: RzContext*, status: int32) -> int32 {
-  rz_ctx_empty(ctx, status);
-  return status;
+  rz_buf_add(buf, "}");
 }
 
 fn task_id_from_path(ctx: RzContext*) -> int32 {
   var raw: string = rz_req_param(ctx->req, "id");
-  var v: int64 = raize_str_to_int(raw);
+  var v: int64 = rz_str_to_int(raw);
   if (v <= 0 || v > 2147483647) { return -1; }
   return (int32)v;
 }
@@ -162,11 +142,11 @@ fn h_index(ctx: RzContext*) -> int32 {
   rz_vars_set(&vars, "title", "raize tasks");
   rz_vars_set(&vars, "tagline", "a bounded in-memory task list on a blocking TCP server");
   var nbuf: uint8[32];
-  rz_vars_set(&vars, "count", raize_int_buf((int64)count, &nbuf[0], 32));
+  rz_vars_set(&vars, "count", rz_int_buf((int64)count, &nbuf[0], 32));
 
   var st: int32 = rz_template_render_into(g_template, &vars, ctx->resp->body);
   if (st != RZ_TPL_OK) {
-    raize_buf_add(ctx->resp->body, "template render failed\n");
+    rz_buf_add(ctx->resp->body, "template render failed\n");
     ctx->resp->status = 500;
     ctx->status = 500;
     return 500;
@@ -184,55 +164,61 @@ fn h_health(ctx: RzContext*) -> int32 {
   count = g_store->count;
   spin_unlock(&g_store->lock);
 
-  var b: RaizeBuf* = ctx->resp->body;
-  raize_buf_add(b, "{{\"status\":\"ok\",\"tasks\":");
-  raize_buf_add_int(b, (int64)count);
-  raize_buf_add(b, ",\"capacity\":64}");
-  return respond_json(ctx, 200);
+  var b: RzBuf* = rz_buf_new();
+  if (b == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  defer rz_buf_free(b);
+  rz_buf_add(b, "{{\"status\":\"ok\",\"tasks\":");
+  rz_buf_add_int(b, (int64)count);
+  rz_buf_add(b, ",\"capacity\":64}");
+  return rz_ctx_json(ctx, 200, rz_buf_str(b));
 }
 
 fn h_list(ctx: RzContext*) -> int32 {
-  var b: RaizeBuf* = ctx->resp->body;
+  var b: RzBuf* = rz_buf_new();
+  if (b == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  defer rz_buf_free(b);
   spin_lock(&g_store->lock);
-  raize_buf_add(b, "[");
+  rz_buf_add(b, "[");
   var i: int32 = 0;
   while (i < g_store->count) {
     task_json_into(b, &g_store->items[i], i > 0);
     i = i + 1;
   }
-  raize_buf_add(b, "]");
+  rz_buf_add(b, "]");
   spin_unlock(&g_store->lock);
-  return respond_json(ctx, 200);
+  return rz_ctx_json(ctx, 200, rz_buf_str(b));
 }
 
 fn h_create(ctx: RzContext*) -> int32 {
-  var title: string = raize_str_empty();
+  var title: string = rz_str_empty();
   if (!rz_json_get_str(ctx->req->body, "title", &title, ctx->arena)) {
-    return json_status(ctx, 400, "{{\"error\":\"missing title\"}");
+    return rz_ctx_json(ctx, 400, "{{\"error\":\"missing title\"}");
   }
-  title = raize_str_trim(title);
+  title = rz_str_trim(title);
   var n: int64 = (int64)title.length;
   if (n <= 0) {
-    return json_status(ctx, 400, "{{\"error\":\"title is empty\"}");
+    return rz_ctx_json(ctx, 400, "{{\"error\":\"title is empty\"}");
   }
   if (n > TASK_TITLE_MAX) {
-    return json_status(ctx, 400, "{{\"error\":\"title too long\"}");
+    return rz_ctx_json(ctx, 400, "{{\"error\":\"title too long\"}");
   }
 
   // The request arena is reset after this handler returns, so the stored
   // title must be an owning copy.
   var owned: string = task_dup(title);
-  if (owned.chars == 0) {
-    rz_ctx_text(ctx, 500, "out of memory\n");
-    return 500;
-  }
+  if (owned.chars == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
 
-  var b: RaizeBuf* = ctx->resp->body;
+  var b: RzBuf* = rz_buf_new();
+  if (b == 0) {
+    rz_str_free(owned);
+    return rz_ctx_text(ctx, 500, "out of memory\n");
+  }
+  defer rz_buf_free(b);
   spin_lock(&g_store->lock);
   if (g_store->count >= TASK_MAX) {
     spin_unlock(&g_store->lock);
-    raize_str_free(owned);
-    return json_status(ctx, 409, "{{\"error\":\"store is full\"}");
+    rz_str_free(owned);
+    return rz_ctx_json(ctx, 409, "{{\"error\":\"store is full\"}");
   }
   var at: int32 = g_store->count;
   g_store->items[at].id = g_store->next_id;
@@ -242,15 +228,17 @@ fn h_create(ctx: RzContext*) -> int32 {
   g_store->count = at + 1;
   task_json_into(b, &g_store->items[at], false);
   spin_unlock(&g_store->lock);
-  return respond_json(ctx, 201);
+  return rz_ctx_json(ctx, 201, rz_buf_str(b));
 }
 
 fn h_get(ctx: RzContext*) -> int32 {
   var id: int32 = task_id_from_path(ctx);
-  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+  if (id < 0) { return rz_ctx_json(ctx, 400, "{{\"error\":\"bad id\"}"); }
 
   var found: bool = false;
-  var b: RaizeBuf* = ctx->resp->body;
+  var b: RzBuf* = rz_buf_new();
+  if (b == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  defer rz_buf_free(b);
   spin_lock(&g_store->lock);
   var idx: int32 = task_index(g_store, id);
   if (idx >= 0) {
@@ -258,16 +246,18 @@ fn h_get(ctx: RzContext*) -> int32 {
     found = true;
   }
   spin_unlock(&g_store->lock);
-  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
-  return respond_json(ctx, 200);
+  if (!found) { return rz_ctx_json(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return rz_ctx_json(ctx, 200, rz_buf_str(b));
 }
 
 fn h_toggle(ctx: RzContext*) -> int32 {
   var id: int32 = task_id_from_path(ctx);
-  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+  if (id < 0) { return rz_ctx_json(ctx, 400, "{{\"error\":\"bad id\"}"); }
 
   var found: bool = false;
-  var b: RaizeBuf* = ctx->resp->body;
+  var b: RzBuf* = rz_buf_new();
+  if (b == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
+  defer rz_buf_free(b);
   spin_lock(&g_store->lock);
   var idx: int32 = task_index(g_store, id);
   if (idx >= 0) {
@@ -276,16 +266,16 @@ fn h_toggle(ctx: RzContext*) -> int32 {
     found = true;
   }
   spin_unlock(&g_store->lock);
-  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
-  return respond_json(ctx, 200);
+  if (!found) { return rz_ctx_json(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return rz_ctx_json(ctx, 200, rz_buf_str(b));
 }
 
 fn h_delete(ctx: RzContext*) -> int32 {
   var id: int32 = task_id_from_path(ctx);
-  if (id < 0) { return json_status(ctx, 400, "{{\"error\":\"bad id\"}"); }
+  if (id < 0) { return rz_ctx_json(ctx, 400, "{{\"error\":\"bad id\"}"); }
 
   var found: bool = false;
-  var title: string = raize_str_empty();
+  var title: string = rz_str_empty();
   spin_lock(&g_store->lock);
   var idx: int32 = task_index(g_store, id);
   if (idx >= 0) {
@@ -302,9 +292,9 @@ fn h_delete(ctx: RzContext*) -> int32 {
   }
   spin_unlock(&g_store->lock);
   // Free outside the lock: free() is not part of the critical section.
-  if (found) { raize_str_free(title); }
-  if (!found) { return json_status(ctx, 404, "{{\"error\":\"not found\"}"); }
-  return empty_status(ctx, 204);
+  if (found) { rz_str_free(title); }
+  if (!found) { return rz_ctx_json(ctx, 404, "{{\"error\":\"not found\"}"); }
+  return rz_ctx_empty(ctx, 204);
 }
 
 fn h_static(ctx: RzContext*) -> int32 {
@@ -315,8 +305,7 @@ fn h_static(ctx: RzContext*) -> int32 {
 fn handle_route(ctx: RzContext*) -> int32 {
   if (g_max_body > 0 && ctx->req != 0) {
     if (ctx->req->body_len > g_max_body) {
-      rz_ctx_text(ctx, 413, "payload too large\n");
-      return 413;
+      return rz_ctx_text(ctx, 413, "payload too large\n");
     }
   }
   return rz_router_handle(g_router, ctx);
@@ -340,12 +329,12 @@ fn read_port(dflt: int32) -> int32 {
   var want: bool = false;
   while (i < n) {
     if (buf[i] == 0) {
-      var a: string = raize_str_view(&buf[start], i - start);
+      var a: string = rz_str_view(&buf[start], i - start);
       if (want) {
-        var v: int64 = raize_str_to_int(a);
+        var v: int64 = rz_str_to_int(a);
         if (v > 0 && v < 65536) { port = (int32)v; }
         want = false;
-      } else if (raize_str_eq(a, "--port")) {
+      } else if (rz_str_eq(a, "--port")) {
         want = true;
       }
       start = i + 1;
@@ -368,7 +357,7 @@ fn store_free(s: RzTaskStore*) {
   if (s == 0) { return; }
   var i: int32 = 0;
   while (i < s->count) {
-    raize_str_free(s->items[i].title);
+    rz_str_free(s->items[i].title);
     i = i + 1;
   }
   free((rawptr)s);
@@ -461,8 +450,8 @@ fn main() -> int32 {
   var a5: int32 = rz_router_add(g_router, "POST", "/api/tasks/:id/toggle", &h_toggle);
   var a6: int32 = rz_router_add(g_router, "DELETE", "/api/tasks/:id", &h_delete);
   var a7: int32 = rz_router_add(g_router, "GET", "/static/*path", &h_static);
-  if (a0 != RZ_E_OK || a1 != RZ_E_OK || a2 != RZ_E_OK || a3 != RZ_E_OK ||
-      a4 != RZ_E_OK || a5 != RZ_E_OK || a6 != RZ_E_OK || a7 != RZ_E_OK) {
+  if (a0 != RZ_OK || a1 != RZ_OK || a2 != RZ_OK || a3 != RZ_OK ||
+      a4 != RZ_OK || a5 != RZ_OK || a6 != RZ_OK || a7 != RZ_OK) {
     println("tasks: route registration failed {a0} {a1} {a2} {a3} {a4} {a5} {a6} {a7}");
     return 11;
   }

@@ -34,9 +34,9 @@ const MSG_TICK: int32 = 1;
 struct EchoSlot {
   fd: int64;
   used: bool;
-  http: RaizeBuf*;          // request head until the upgrade
+  http: RzBuf*;          // request head until the upgrade
   ws: RzWsConn*;            // after the upgrade
-  out: RaizeBuf*;           // pre-upgrade output (101 or refusal)
+  out: RzBuf*;           // pre-upgrade output (101 or refusal)
   closing: bool;            // close once output is flushed
   want_out: bool;           // registered for EPOLLOUT
 }
@@ -48,7 +48,7 @@ var g_arena: RzArena* = 0;
 
 fn slot_tag(i: int32) -> int64 { return (int64)i + 1; }
 
-fn slot_out(s: EchoSlot*) -> RaizeBuf* {
+fn slot_out(s: EchoSlot*) -> RzBuf* {
   if (s->ws != 0) { return s->ws->out; }
   return s->out;
 }
@@ -59,8 +59,8 @@ fn slot_close(i: int32) {
   rz_poll_del(g_poll, s->fd);
   rz_sys_close(s->fd);
   if (s->ws != 0) { rz_ws_conn_free(s->ws); }
-  raize_buf_free(s->http);
-  raize_buf_free(s->out);
+  rz_buf_free(s->http);
+  rz_buf_free(s->out);
   memset((rawptr)s, 0, sizeof(EchoSlot));
 }
 
@@ -68,7 +68,7 @@ fn slot_close(i: int32) {
 // is finished and the output is empty.
 fn slot_flush(i: int32) {
   var s: EchoSlot* = &g_slots[i];
-  var out: RaizeBuf* = slot_out(s);
+  var out: RzBuf* = slot_out(s);
   while (out->len > 0) {
     var n: int64 = rz_sys_send(s->fd, out->data, out->len);
     if (n == RZ_EINTR) { continue; }
@@ -114,8 +114,8 @@ fn flush_all() {
 
 fn on_message(ctx: rawptr, op: int32, payload: string) -> int32 {
   var s: EchoSlot* = (EchoSlot*)ctx;
-  if (op == RZ_WS_OP_TEXT && raize_str_starts(payload, "broadcast:")) {
-    broadcast(raize_str_from(payload, 10));
+  if (op == RZ_WS_OP_TEXT && rz_str_starts(payload, "broadcast:")) {
+    broadcast(rz_str_from(payload, 10));
     return 0;
   }
   return rz_ws_conn_send(s->ws, op, payload);
@@ -124,7 +124,7 @@ fn on_message(ctx: rawptr, op: int32, payload: string) -> int32 {
 // Handles bytes before the upgrade. Returns false when the slot was closed.
 fn slot_http(i: int32, p: uint8*, n: int64) {
   var s: EchoSlot* = &g_slots[i];
-  raize_buf_add_bytes(s->http, p, n);
+  rz_buf_add_bytes(s->http, p, n);
   rz_arena_reset(g_arena);
   var req: RzRequest;
   memset((rawptr)&req, 0, sizeof(RzRequest));
@@ -133,9 +133,9 @@ fn slot_http(i: int32, p: uint8*, n: int64) {
   var status: int32 = 400;
   if (rc == RZ_PARSE_COMPLETE) { status = rz_ws_check_upgrade(&req); }
   if (status != RZ_WS_UPGRADE_OK) {
-    raize_buf_add(s->out, "HTTP/1.1 ");
-    raize_buf_add_int(s->out, (int64)status);
-    raize_buf_add(s->out, " Refused\r\nSec-WebSocket-Version: 13\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    rz_buf_add(s->out, "HTTP/1.1 ");
+    rz_buf_add_int(s->out, (int64)status);
+    rz_buf_add(s->out, " Refused\r\nSec-WebSocket-Version: 13\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     s->closing = true;
     slot_flush(i);
     return;
@@ -173,8 +173,8 @@ fn do_accept(listen_fd: int64) {
     var s: EchoSlot* = &g_slots[i];
     s->fd = fd;
     s->used = true;
-    s->http = raize_buf_new();
-    s->out = raize_buf_new();
+    s->http = rz_buf_new();
+    s->out = rz_buf_new();
     rz_poll_add(g_poll, fd, RZ_EPOLLIN | RZ_EPOLLRDHUP, slot_tag(i));
   }
 }
@@ -196,7 +196,7 @@ fn ticker(arg: cstring) -> uint32 {
 
 fn main(argc: int32, argv: cstring*) -> int32 {
   var port: int32 = 8095;
-  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+  if (argc > 1) { port = (int32)rz_str_to_int(rz_str_from_c(argv[1])); }
   var err: int32 = 0;
   var lfd: int64 = rz_listen(port, 64, &err);
   if (lfd < 0) { print("listen failed: {err}\n"); return 1; }
@@ -221,11 +221,11 @@ fn main(argc: int32, argv: cstring*) -> int32 {
         while (rz_poll_take(g_poll, &m)) {
           if (m.kind == MSG_TICK) {
             var tb: uint8[32];
-            var t: RaizeBuf* = raize_buf_new();
-            raize_buf_add(t, "tick ");
-            raize_buf_add(t, raize_int_buf(m.a, &tb[0], 32));
-            broadcast(raize_buf_str(t));
-            raize_buf_free(t);
+            var t: RzBuf* = rz_buf_new();
+            rz_buf_add(t, "tick ");
+            rz_buf_add(t, rz_int_buf(m.a, &tb[0], 32));
+            broadcast(rz_buf_str(t));
+            rz_buf_free(t);
           }
         }
       } else if (e.tag >= 1 && e.tag <= (int64)SLOTS) {

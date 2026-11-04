@@ -92,8 +92,8 @@ export fn rz_header_trim(value: string) -> string {
     var c: int32 = (int32)value.chars[end - 1];
     if (c == 32 || c == 9) { end = end - 1; } else { break; }
   }
-  if (end <= start) { return raize_str_empty(); }
-  return raize_str_sub(value, start, end);
+  if (end <= start) { return rz_str_empty(); }
+  return rz_str_sub(value, start, end);
 }
 
 // ---------------------------------------------------------------------------
@@ -106,22 +106,22 @@ export struct RzHeader {
 }
 
 export fn rz_header_get(items: RzHeader*, count: int32, name: string) -> string {
-  if (items == 0) { return raize_str_empty(); }
+  if (items == 0) { return rz_str_empty(); }
   var i: int32 = 0;
   while (i < count) {
-    if (raize_str_eq_ci(items[i].name, name)) {
+    if (rz_str_eq_ci(items[i].name, name)) {
       return items[i].value;
     }
     i = i + 1;
   }
-  return raize_str_empty();
+  return rz_str_empty();
 }
 
 export fn rz_header_has(items: RzHeader*, count: int32, name: string) -> bool {
   if (items == 0) { return false; }
   var i: int32 = 0;
   while (i < count) {
-    if (raize_str_eq_ci(items[i].name, name)) { return true; }
+    if (rz_str_eq_ci(items[i].name, name)) { return true; }
     i = i + 1;
   }
   return false;
@@ -132,7 +132,7 @@ export fn rz_header_count_named(items: RzHeader*, count: int32, name: string) ->
   var seen: int32 = 0;
   var i: int32 = 0;
   while (i < count) {
-    if (raize_str_eq_ci(items[i].name, name)) { seen = seen + 1; }
+    if (rz_str_eq_ci(items[i].name, name)) { seen = seen + 1; }
     i = i + 1;
   }
   return seen;
@@ -150,9 +150,9 @@ export fn rz_header_has_token(value: string, token: string) -> bool {
     var c: int32 = 0;
     if (!at_end) { c = (int32)value.chars[i]; }
     if (at_end || c == 44) {
-      var piece: string = raize_str_sub(value, start, i);
+      var piece: string = rz_str_sub(value, start, i);
       piece = rz_header_trim(piece);
-      if (raize_str_eq_ci(piece, token)) { return true; }
+      if (rz_str_eq_ci(piece, token)) { return true; }
       start = i + 1;
     }
     i = i + 1;
@@ -196,7 +196,7 @@ export fn rz_header_pair_ok(name: string, value: string) -> bool {
   if (rz_header_value_ok("a\rb")) { return 4; }
   if (!rz_header_value_ok("  spaced  ")) { return 5; }
   var t: string = rz_header_trim("  x y\t ");
-  if (!raize_str_eq(t, "x y")) { return 6; }
+  if (!rz_str_eq(t, "x y")) { return 6; }
   if (rz_header_trim(" \t ").length != 0) { return 7; }
   return 0;
 }
@@ -209,8 +209,8 @@ export fn rz_header_pair_ok(name: string, value: string) -> bool {
   items[1].value = "application/json";
   items[2].name = "connection";
   items[2].value = "keep-alive, Upgrade";
-  if (!raize_str_eq(rz_header_get(&items[0], 3, "host"), "example")) { return 1; }
-  if (!raize_str_eq(rz_header_get(&items[0], 3, "CONTENT-TYPE"), "application/json")) { return 2; }
+  if (!rz_str_eq(rz_header_get(&items[0], 3, "host"), "example")) { return 1; }
+  if (!rz_str_eq(rz_header_get(&items[0], 3, "CONTENT-TYPE"), "application/json")) { return 2; }
   if (rz_header_get(&items[0], 3, "missing").length != 0) { return 3; }
   if (!rz_header_has(&items[0], 3, "HOST")) { return 4; }
   if (rz_header_has(&items[0], 3, "Date")) { return 5; }
@@ -235,6 +235,6 @@ export fn rz_header_pair_ok(name: string, value: string) -> bool {
   if (rz_header_count_named(&items[0], 2, "A") != 2) { return 4; }
   // First match wins: a duplicate Content-Length is rejected by the parser
   // before lookup matters, but lookup must still be deterministic.
-  if (!raize_str_eq(rz_header_get(&items[0], 2, "a"), "1")) { return 5; }
+  if (!rz_str_eq(rz_header_get(&items[0], 2, "a"), "1")) { return 5; }
   return 0;
 }

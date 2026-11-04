@@ -23,8 +23,8 @@ fn t_page(title: string, a: string, b: string, flag: bool) -> RzHtml* {
   return h;
 }
 
-fn t_json(h: RzHtml*) -> RaizeBuf* {
-  var b: RaizeBuf* = raize_buf_new();
+fn t_json(h: RzHtml*) -> RzBuf* {
+  var b: RzBuf* = rz_buf_new();
   rz_html_json(h, b);
   return b;
 }
@@ -32,14 +32,14 @@ fn t_json(h: RzHtml*) -> RaizeBuf* {
 @test fn t_rz_html_render_and_json() -> int32 {
   var h: RzHtml* = t_page("a<b", "x", "y", false);
   var fail: int32 = 0;
-  var out: RaizeBuf* = raize_buf_new();
+  var out: RzBuf* = rz_buf_new();
   rz_html_render(h, out);
-  if (!raize_str_eq(raize_buf_str(out), "<h1>a&lt;b</h1><ul><li>x</li><li>y</li></ul>")) { fail = 1; }
-  var j: RaizeBuf* = t_json(h);
+  if (!rz_str_eq(rz_buf_str(out), "<h1>a&lt;b</h1><ul><li>x</li><li>y</li></ul>")) { fail = 1; }
+  var j: RzBuf* = t_json(h);
   var want: string = "{{\"s\":[\"<h1>\",\"</h1><ul>\",\"</ul>\"],\"0\":\"a&lt;b\",\"1\":{{\"s\":[\"<li>\",\"</li>\"],\"d\":[[\"x\"],[\"y\"]]}}";
-  if (fail == 0 && !raize_str_eq(raize_buf_str(j), want)) { fail = 2; }
-  raize_buf_free(out);
-  raize_buf_free(j);
+  if (fail == 0 && !rz_str_eq(rz_buf_str(j), want)) { fail = 2; }
+  rz_buf_free(out);
+  rz_buf_free(j);
   rz_html_free(h);
   return fail;
 }
@@ -48,15 +48,15 @@ fn t_json(h: RzHtml*) -> RaizeBuf* {
   var a: RzHtml* = t_page("t", "x", "y", false);
   var b: RzHtml* = t_page("t", "x", "y", false);
   var fail: int32 = 0;
-  var out: RaizeBuf* = raize_buf_new();
+  var out: RzBuf* = rz_buf_new();
   if (rz_html_diff(a, b, out) || out->len != 0) { fail = 1; }
   if (fail == 0 && !rz_html_equal(a, b)) { fail = 2; }
   var c: RzHtml* = t_page("u", "x", "y", false);
-  if (fail == 0 && (!rz_html_diff(b, c, out) || !raize_str_eq(raize_buf_str(out), "{{\"0\":\"u\"}"))) { fail = 3; }
+  if (fail == 0 && (!rz_html_diff(b, c, out) || !rz_str_eq(rz_buf_str(out), "{{\"0\":\"u\"}"))) { fail = 3; }
   out->len = 0;
   var d: RzHtml* = t_page("u", "x", "z", false);
-  if (fail == 0 && (!rz_html_diff(c, d, out) || !raize_str_eq(raize_buf_str(out), "{{\"1\":{{\"d\":[[\"x\"],[\"z\"]]}}"))) { fail = 4; }
-  raize_buf_free(out);
+  if (fail == 0 && (!rz_html_diff(c, d, out) || !rz_str_eq(rz_buf_str(out), "{{\"1\":{{\"d\":[[\"x\"],[\"z\"]]}}"))) { fail = 4; }
+  rz_buf_free(out);
   rz_html_free(a);
   rz_html_free(b);
   rz_html_free(c);
@@ -75,18 +75,18 @@ fn t_json(h: RzHtml*) -> RaizeBuf* {
   var y2: RzHtml* = rz_html_node(&T_YES[0], 2, 44);
   rz_html_put(y2, 0, 2);
   rz_html_put(o2, 0, y2);
-  var out: RaizeBuf* = raize_buf_new();
+  var out: RzBuf* = rz_buf_new();
   // Same statics: a nested diff without "s".
-  if (!rz_html_diff(o1, o2, out) || !raize_str_eq(raize_buf_str(out), "{{\"0\":{{\"0\":\"2\"}}")) { fail = 1; }
+  if (!rz_html_diff(o1, o2, out) || !rz_str_eq(rz_buf_str(out), "{{\"0\":{{\"0\":\"2\"}}")) { fail = 1; }
   out->len = 0;
   var o3: RzHtml* = rz_html_node(&T_ITEM[0], 2, 33);
   rz_html_put(o3, 0, rz_html_node(&T_NO[0], 1, 55));
   // Different statics: the whole branch, with "s".
-  if (fail == 0 && (!rz_html_diff(o2, o3, out) || !raize_str_eq(raize_buf_str(out), "{{\"0\":{{\"s\":[\"<i>none</i>\"]}}"))) { fail = 2; }
+  if (fail == 0 && (!rz_html_diff(o2, o3, out) || !rz_str_eq(rz_buf_str(out), "{{\"0\":{{\"s\":[\"<i>none</i>\"]}}"))) { fail = 2; }
   out->len = 0;
   rz_html_render(o3, out);
-  if (fail == 0 && !raize_str_eq(raize_buf_str(out), "<li><i>none</i></li>")) { fail = 3; }
-  raize_buf_free(out);
+  if (fail == 0 && !rz_str_eq(rz_buf_str(out), "<li><i>none</i></li>")) { fail = 3; }
+  rz_buf_free(out);
   rz_html_free(o1);
   rz_html_free(o2);
   rz_html_free(o3);

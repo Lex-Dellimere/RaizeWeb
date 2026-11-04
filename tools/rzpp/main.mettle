@@ -22,21 +22,21 @@ import "gen";
 import "msg";
 
 fn rzpp_read(path: string) -> string {
-  var fp: cstring = fopen(raize_str_c(path), "rb");
-  if (fp == 0) { return raize_str_empty(); }
-  var b: RaizeBuf* = raize_buf_new_cap(65536);
+  var fp: cstring = fopen(rz_str_c(path), "rb");
+  if (fp == 0) { return rz_str_empty(); }
+  var b: RzBuf* = rz_buf_new_cap(65536);
   var chunk: uint8[8192];
   while (true) {
     var got: int64 = fread((cstring)&chunk[0], 1, 8192, fp);
     if (got <= 0) { break; }
-    raize_buf_add_bytes(b, &chunk[0], got);
+    rz_buf_add_bytes(b, &chunk[0], got);
   }
   fclose(fp);
-  return raize_buf_take(b);
+  return rz_buf_take(b);
 }
 
 fn rzpp_write(path: string, s: string) -> bool {
-  var fp: cstring = fopen(raize_str_c(path), "wb");
+  var fp: cstring = fopen(rz_str_c(path), "wb");
   if (fp == 0) { return false; }
   var n: int64 = fwrite((cstring)s.chars, 1, (int64)s.length, fp);
   fclose(fp);
@@ -45,8 +45,8 @@ fn rzpp_write(path: string, s: string) -> bool {
 
 // "examples/todos/app.mettle" -> "todos_app"
 fn rzpp_prefix(path: string) -> string {
-  var b: RaizeBuf* = raize_buf_new();
-  var slash: int64 = raize_str_rfind_byte(path, 47);
+  var b: RzBuf* = rz_buf_new();
+  var slash: int64 = rz_str_rfind_byte(path, 47);
   var start: int64 = 0;
   if (slash > 0) {
     var prev: int64 = slash - 1;
@@ -57,75 +57,75 @@ fn rzpp_prefix(path: string) -> string {
   while (i < (int64)path.length) {
     var c: int32 = (int32)path.chars[i];
     if (c == 46) { break; }
-    if (rzpp_ident_char(c)) { raize_buf_add_byte(b, c); } else { raize_buf_add_byte(b, 95); }
+    if (rzpp_ident_char(c)) { rz_buf_add_byte(b, c); } else { rz_buf_add_byte(b, 95); }
     i = i + 1;
   }
-  return raize_buf_take(b);
+  return rz_buf_take(b);
 }
 
 // Compiles one literal src[a..b) (the text between the triple quotes) into
 // `out` as a single line of statements ending in `return __rzN;`.
-export fn rzpp_literal(g: RzppGen*, a: int64, b: int64, out: RaizeBuf*) {
+export fn rzpp_literal(g: RzppGen*, a: int64, b: int64, out: RzBuf*) {
   var s: int64 = a;
   var e: int64 = b;
-  while (s < e && raize_char_is_space((int32)g->src.chars[s])) { s = s + 1; }
-  while (e > s && raize_char_is_space((int32)g->src.chars[e - 1])) { e = e - 1; }
+  while (s < e && rz_char_is_space((int32)g->src.chars[s])) { s = s + 1; }
+  while (e > s && rz_char_is_space((int32)g->src.chars[e - 1])) { e = e - 1; }
   var root: RzppNode* = rzpp_node_new(g);
   rzpp_parse(g, root, s, e);
   rzpp_emit_node(g, root, out);
-  raize_buf_add(out, "return ");
+  rz_buf_add(out, "return ");
   rzpp_var(out, root->id);
-  raize_buf_add(out, ";");
+  rz_buf_add(out, ";");
   rzpp_node_free(root);
 }
 
 // Runs the whole file. Returns the generated source, or empty with g->err set.
 export fn rzpp_file(g: RzppGen*) -> string {
   var src: string = g->src;
-  var out: RaizeBuf* = raize_buf_new_cap((int64)src.length * 2);
-  var tail: RaizeBuf* = raize_buf_new();
+  var out: RzBuf* = rz_buf_new_cap((int64)src.length * 2);
+  var tail: RzBuf* = rz_buf_new();
   rzpp_messages(g, tail);
   var copied: int64 = 0;
-  var at: int64 = raize_str_find(src, "html\"\"\"");
+  var at: int64 = rz_str_find(src, "html\"\"\"");
   while (at >= 0 && !rzpp_failed(g)) {
     if (rzpp_in_comment(src, at)) {
-      at = raize_str_find_from(src, "html\"\"\"", at + 7);
+      at = rz_str_find_from(src, "html\"\"\"", at + 7);
       continue;
     }
     // The literal must be the value of a return statement.
     var r: int64 = at;
-    while (r > 0 && raize_char_is_space((int32)src.chars[r - 1])) { r = r - 1; }
-    if (r < 6 || !raize_str_eq(raize_str_sub(src, r - 6, r), "return")) {
+    while (r > 0 && rz_char_is_space((int32)src.chars[r - 1])) { r = r - 1; }
+    if (r < 6 || !rz_str_eq(rz_str_sub(src, r - 6, r), "return")) {
       rzpp_fail(g, at, "html\"\"\"...\"\"\" must be returned: `return html\"\"\"...\"\"\";`");
       break;
     }
     var body: int64 = at + 7;
-    var close: int64 = raize_str_find_from(src, "\"\"\"", body);
+    var close: int64 = rz_str_find_from(src, "\"\"\"", body);
     if (close < 0) { rzpp_fail(g, at, "html\"\"\" is never closed"); break; }
     var semi: int64 = close + 3;
-    while (semi < (int64)src.length && raize_char_is_space((int32)src.chars[semi])) { semi = semi + 1; }
+    while (semi < (int64)src.length && rz_char_is_space((int32)src.chars[semi])) { semi = semi + 1; }
     if (semi >= (int64)src.length || src.chars[semi] != 59) { rzpp_fail(g, close, "expected `;` after the html literal"); break; }
-    raize_buf_add(out, raize_str_sub(src, copied, r - 6));
+    rz_buf_add(out, rz_str_sub(src, copied, r - 6));
     rzpp_literal(g, body, close, out);
     var k: int64 = r - 6;
     while (k <= semi) {
-      if (src.chars[k] == 10) { raize_buf_add_byte(out, 10); }
+      if (src.chars[k] == 10) { rz_buf_add_byte(out, 10); }
       k = k + 1;
     }
     copied = semi + 1;
-    at = raize_str_find_from(src, "html\"\"\"", copied);
+    at = rz_str_find_from(src, "html\"\"\"", copied);
   }
   if (rzpp_failed(g)) {
-    raize_buf_free(out);
-    raize_buf_free(tail);
-    return raize_str_empty();
+    rz_buf_free(out);
+    rz_buf_free(tail);
+    return rz_str_empty();
   }
-  raize_buf_add(out, raize_str_from(src, copied));
-  raize_buf_add(out, "\n// ---- generated by tools/rzpp: do not edit, edit the source above ----\n");
-  raize_buf_add(out, raize_buf_str(g->consts));
-  raize_buf_add(out, raize_buf_str(tail));
-  raize_buf_free(tail);
-  return raize_buf_take(out);
+  rz_buf_add(out, rz_str_from(src, copied));
+  rz_buf_add(out, "\n// ---- generated by tools/rzpp: do not edit, edit the source above ----\n");
+  rz_buf_add(out, rz_buf_str(g->consts));
+  rz_buf_add(out, rz_buf_str(tail));
+  rz_buf_free(tail);
+  return rz_buf_take(out);
 }
 
 export fn rzpp_gen_new(src: string, path: string) -> RzppGen* {
@@ -133,11 +133,11 @@ export fn rzpp_gen_new(src: string, path: string) -> RzppGen* {
   g->src = src;
   g->path = path;
   g->prefix = rzpp_prefix(path);
-  g->consts = raize_buf_new();
-  g->err = raize_buf_new();
-  g->enums = raize_strlist_new();
-  g->variants = raize_strlist_new();
-  g->owners = raize_strlist_new();
+  g->consts = rz_buf_new();
+  g->err = rz_buf_new();
+  g->enums = rz_strlist_new();
+  g->variants = rz_strlist_new();
+  g->owners = rz_strlist_new();
   return g;
 }
 
@@ -146,14 +146,14 @@ fn main(argc: int32, argv: cstring*) -> int32 {
     println("usage: rzpp <in.mettle> <out.mettle>");
     return 2;
   }
-  var in_path: string = raize_str_from_c(argv[1]);
-  var out_path: string = raize_str_from_c(argv[2]);
+  var in_path: string = rz_str_from_c(argv[1]);
+  var out_path: string = rz_str_from_c(argv[2]);
   var src: string = rzpp_read(in_path);
   if (src.length == 0) { println("rzpp: cannot read {in_path}"); return 1; }
   var g: RzppGen* = rzpp_gen_new(src, in_path);
   var gen: string = rzpp_file(g);
   if (rzpp_failed(g)) {
-    println("{raize_buf_str(g->err)}");
+    println("{rz_buf_str(g->err)}");
     return 1;
   }
   if (!rzpp_write(out_path, gen)) { println("rzpp: cannot write {out_path}"); return 1; }

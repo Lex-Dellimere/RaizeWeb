@@ -148,7 +148,7 @@ export fn rz_chain_count(c: RzChain*) -> int32 {
 }
 
 export fn rz_chain_name(c: RzChain*, i: int32) -> string {
-  if (c == 0 || i < 0 || i >= c->count) { return raize_str_empty(); }
+  if (c == 0 || i < 0 || i >= c->count) { return rz_str_empty(); }
   return c->names[i];
 }
 
@@ -332,7 +332,7 @@ fn t_chain_step_stop(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int32 {
 fn t_chain_step_after(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int32 {
   var st: int32 = next(ctx);
   var seen: int32 = rz_chain_status(ctx, st);
-  if (ctx->resp != 0 && ctx->resp->body != 0) { raize_buf_add_int(ctx->resp->body, (int64)seen); }
+  if (ctx->resp != 0 && ctx->resp->body != 0) { rz_buf_add_int(ctx->resp->body, (int64)seen); }
   return st;
 }
 
@@ -374,8 +374,8 @@ fn t_chain_term_boom(ctx: RzContext*) -> int32 {
   if (rz_chain_mount(c) != 0) { return 10; }
   if (rz_chain_serve(c, &ctx) != 200) { return 11; }
   // every step ran exactly once, in order, then the terminal
-  if (!raize_str_eq(raize_buf_str(resp->body), "ABCT")) { return 12; }
-  if (!raize_str_eq(rz_chain_name(c, 0), "a")) { return 13; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "ABCT")) { return 12; }
+  if (!rz_str_eq(rz_chain_name(c, 0), "a")) { return 13; }
   var st: RzChainStats = rz_chain_stats(c);
   if (st.runs != 1) { return 14; }
   if (st.steps_run != 3) { return 15; }
@@ -405,7 +405,7 @@ fn t_chain_term_boom(ctx: RzContext*) -> int32 {
   if (rz_chain_mount(c) != 0) { return 9; }
   // an abort is reported to the server as 0 ("the response is built")
   if (rz_chain_serve(c, &ctx) != 0) { return 10; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "AS")) { return 11; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "AS")) { return 11; }
   if (!ctx.aborted) { return 12; }
   if (resp->status != 204) { return 13; }
   var st: RzChainStats = rz_chain_stats(c);
@@ -434,7 +434,7 @@ fn t_chain_term_boom(ctx: RzContext*) -> int32 {
   if (rz_chain_mount(c) != 0) { return 7; }
   // the terminal returned a status that is not "0 = built": 500 reaches the step
   if (rz_chain_serve(c, &ctx) != 500) { return 8; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "500")) { return 9; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "500")) { return 9; }
   return 0;
 }
 
@@ -476,7 +476,7 @@ fn t_chain_term_boom(ctx: RzContext*) -> int32 {
   if (rz_chain_set_terminal(c, &t_chain_term_ok) != 0) { return 6; }
   if (rz_chain_mount(c) != 0) { return 7; }
   if (rz_chain_serve(c, &ctx) != 200) { return 8; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "T")) { return 9; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "T")) { return 9; }
   return 0;
 }
 
@@ -549,7 +549,7 @@ fn t_chain_term_boom(ctx: RzContext*) -> int32 {
   if (rz_chain_add(c, "cors", &t_chain_step_b) != 0) { return 3; }
   var buf: uint8[64];
   var n: int64 = rz_chain_describe(c, &buf[0], 64);
-  if (!raize_str_eq(raize_str_view(&buf[0], n), "logging,cors")) { return 4; }
+  if (!rz_str_eq(rz_str_view(&buf[0], n), "logging,cors")) { return 4; }
   // too small a buffer: nothing is written (never a truncated description)
   if (rz_chain_describe(c, &buf[0], 4) != 0) { return 5; }
   // a chain without a terminal cannot be mounted, so the server never gets a

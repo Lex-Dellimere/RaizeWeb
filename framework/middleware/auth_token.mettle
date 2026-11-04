@@ -66,11 +66,11 @@ export fn rz_auth_bearer_token(req: RzRequest*, out: string*) -> int32 {
   if (v.length == 0) { return 0; }
   var t: string = rz_header_trim(v);
   if ((int64)t.length <= 6) { return 0; }
-  var scheme: string = raize_str_sub(t, 0, 6);
-  if (!raize_str_eq_ci(scheme, RZ_AUTH_SCHEME_BEARER)) { return 0; }
+  var scheme: string = rz_str_sub(t, 0, 6);
+  if (!rz_str_eq_ci(scheme, RZ_AUTH_SCHEME_BEARER)) { return 0; }
   var c: int32 = (int32)t.chars[6];
   if (c != 32 && c != 9) { return 0; }
-  var tok: string = rz_header_trim(raize_str_sub(t, 6, (int64)t.length));
+  var tok: string = rz_header_trim(rz_str_sub(t, 6, (int64)t.length));
   out->chars = tok.chars;
   out->length = tok.length;
   if ((int64)tok.length == 0) { return 0; }
@@ -98,17 +98,17 @@ fn t_tok_hdr(req: RzRequest*, name: string, value: string) {
   defer rz_arena_free(arena);
   var req: RzRequest;
   if (!rz_request_init(&req, arena)) { return 2; }
-  var tok: string = raize_str_empty();
+  var tok: string = rz_str_empty();
   // no header at all: 0, and *out is written empty
   if (rz_auth_bearer_token(&req, &tok) != 0) { return 3; }
   if (tok.length != 0) { return 4; }
   t_tok_hdr(&req, "Authorization", "Bearer abc123");
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 5; }
-  if (!raize_str_eq(tok, "abc123")) { return 6; }
+  if (!rz_str_eq(tok, "abc123")) { return 6; }
   // the scheme is a case-insensitive token
   req.headers[0].value = "bearer abc123";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 7; }
-  if (!raize_str_eq(tok, "abc123")) { return 8; }
+  if (!rz_str_eq(tok, "abc123")) { return 8; }
   req.headers[0].value = "BEARER abc123";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 9; }
   // the separator is one SP or HTAB (more is trimmed as OWS on the token)
@@ -116,7 +116,7 @@ fn t_tok_hdr(req: RzRequest*, name: string, value: string) {
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 10; }
   req.headers[0].value = "Bearer    abc123";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 11; }
-  if (!raize_str_eq(tok, "abc123")) { return 12; }
+  if (!rz_str_eq(tok, "abc123")) { return 12; }
   // anything that is not "Bearer <token>" is no credential, not a bad token
   req.headers[0].value = "Basic dXNlcjpwdw==";
   if (rz_auth_bearer_token(&req, &tok) != 0) { return 13; }
@@ -129,7 +129,7 @@ fn t_tok_hdr(req: RzRequest*, name: string, value: string) {
   // surrounding OWS on the whole value and on the token is trimmed
   req.headers[0].value = "  Bearer   tok  ";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 17; }
-  if (!raize_str_eq(tok, "tok")) { return 18; }
+  if (!rz_str_eq(tok, "tok")) { return 18; }
   // a failing call clears a view the caller still held (no stale credential)
   req.headers[0].value = "Basic x";
   if (rz_auth_bearer_token(&req, &tok) != 0) { return 19; }
@@ -143,29 +143,29 @@ fn t_tok_hdr(req: RzRequest*, name: string, value: string) {
   defer rz_arena_free(arena);
   var req: RzRequest;
   if (!rz_request_init(&req, arena)) { return 2; }
-  var tok: string = raize_str_empty();
+  var tok: string = rz_str_empty();
   // a null request and a null out-pointer are refused, not dereferenced
   if (rz_auth_bearer_token(0, &tok) != 0) { return 3; }
   if (rz_auth_bearer_token(&req, 0) != 0) { return 4; }
   // the scheme lookup is case-insensitive, so the header *name* is too
   t_tok_hdr(&req, "authorization", "Bearer lower-name");
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 5; }
-  if (!raize_str_eq(tok, "lower-name")) { return 6; }
+  if (!rz_str_eq(tok, "lower-name")) { return 6; }
   // a token with punctuation / JWT shape is passed through untouched: it is
   // the verifier's job to judge it, not the parser's
   req.headers[0].value = "Bearer eyJhbGciOi.eyJzdWIi-9_ok";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 7; }
-  if (!raize_str_eq(tok, "eyJhbGciOi.eyJzdWIi-9_ok")) { return 8; }
+  if (!rz_str_eq(tok, "eyJhbGciOi.eyJzdWIi-9_ok")) { return 8; }
   // a token containing spaces is truncated at nothing — it is returned whole
   // (a malformed token is the verifier's 401 to give, not a parser crash)
   req.headers[0].value = "Bearer two words";
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 9; }
-  if (!raize_str_eq(tok, "two words")) { return 10; }
+  if (!rz_str_eq(tok, "two words")) { return 10; }
   // only the first Authorization header is read here (headers[0] still holds
   // "Bearer two words"); refusing a duplicate is auth.mettle's job, because
   // RFC 7235 makes two of them malformed rather than "pick one"
   t_tok_hdr(&req, "Authorization", "Bearer second");
   if (rz_auth_bearer_token(&req, &tok) != 1) { return 11; }
-  if (!raize_str_eq(tok, "two words")) { return 12; }
+  if (!rz_str_eq(tok, "two words")) { return 12; }
   return 0;
 }

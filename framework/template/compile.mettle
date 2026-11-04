@@ -70,7 +70,7 @@ export fn rz_template_compile(t: RzTemplate*, src: string, decls: RzVarMap*) -> 
   var refs: RzTemplateRef[32];
   var ref_count: int32 = 0;
   var st: RzScan;
-  st.src = raize_str_view(t->src, n);
+  st.src = rz_str_view(t->src, n);
   st.pos = 0;
   st.in_section = false;
   st.open_off = 0;
@@ -84,7 +84,7 @@ export fn rz_template_compile(t: RzTemplate*, src: string, decls: RzVarMap*) -> 
   var u: int32 = 0;
   var i2: int32 = 0;
   while (i2 < ref_count) {
-    var rn: string = raize_str_view(&t->src[refs[i2].off], refs[i2].len);
+    var rn: string = rz_str_view(&t->src[refs[i2].off], refs[i2].len);
     if (!rz_vars_has(decls, rn)) {
       t->undef[u].off = refs[i2].off;
       t->undef[u].len = refs[i2].len;

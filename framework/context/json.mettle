@@ -21,7 +21,7 @@
 //     integer, and `rz_json_get_int` refuses it rather than truncating.
 //
 // Building JSON out is `rz_json_escape_into`, which writes into the caller's
-// RaizeBuf; the framework never concatenates a JSON string by hand.
+// RzBuf; the framework never concatenates a JSON string by hand.
 
 import "std/mem";
 import "../str/str";
@@ -109,14 +109,14 @@ export fn rz_json_find(body: string, key: string) -> int64 {
     if (body.chars[i] != 34) { return -1; }
     var ke: int64 = rz_json_string_end(body, i);
     if (ke < 0) { return -1; }
-    var raw_key: string = raize_str_sub(body, i + 1, ke - 1);
+    var raw_key: string = rz_str_sub(body, i + 1, ke - 1);
     i = rz_json_skip_ws(body, ke);
     if (i >= n) { return -1; }
     if (body.chars[i] != 58) { return -1; }
     i = rz_json_skip_ws(body, i + 1);
     var ve: int64 = rz_json_value_end(body, i);
     if (ve < 0) { return -1; }
-    if (raize_str_eq(raw_key, key)) { return i; }
+    if (rz_str_eq(raw_key, key)) { return i; }
     i = rz_json_skip_ws(body, ve);
     if (i >= n) { return -1; }
     if (body.chars[i] == 44) { i = rz_json_skip_ws(body, i + 1); continue; }
@@ -138,7 +138,7 @@ export fn rz_json_array_at(body: string, index: int32, out: string*) -> bool {
     var e: int64 = rz_json_value_end(body, i);
     if (e < 0 || e <= i) { return false; }
     if (at == index) {
-      if (out != 0) { *out = raize_str_sub(body, i, e); }
+      if (out != 0) { *out = rz_str_sub(body, i, e); }
       return true;
     }
     i = rz_json_skip_ws(body, e);
@@ -155,10 +155,10 @@ export fn rz_json_has(body: string, key: string) -> bool {
 // The value exactly as written (quotes, braces and all). A view into `body`.
 export fn rz_json_raw(body: string, key: string) -> string {
   var at: int64 = rz_json_find(body, key);
-  if (at < 0) { return raize_str_empty(); }
+  if (at < 0) { return rz_str_empty(); }
   var end: int64 = rz_json_value_end(body, at);
-  if (end < 0) { return raize_str_empty(); }
-  return raize_str_sub(body, at, end);
+  if (end < 0) { return rz_str_empty(); }
+  return rz_str_sub(body, at, end);
 }
 
 export fn rz_json_get_raw(body: string, key: string, out: string*) -> bool {
@@ -166,13 +166,13 @@ export fn rz_json_get_raw(body: string, key: string, out: string*) -> bool {
   if (at < 0) { return false; }
   var end: int64 = rz_json_value_end(body, at);
   if (end < 0) { return false; }
-  *out = raize_str_sub(body, at, end);
+  *out = rz_str_sub(body, at, end);
   return true;
 }
 
 export fn rz_json_is_null(body: string, key: string) -> bool {
   var raw: string = rz_json_raw(body, key);
-  return raize_str_eq(raw, "null");
+  return rz_str_eq(raw, "null");
 }
 
 // ---------------------------------------------------------------------------
@@ -217,10 +217,10 @@ fn rz_json_hex4(body: string, at: int64) -> int64 {
 // view into `inner` when there is nothing to unescape.
 export fn rz_json_unescape(inner: string, arena: RzArena*) -> string {
   var n: int64 = (int64)inner.length;
-  if (n <= 0) { return raize_str_empty(); }
-  if (raize_str_find_byte(inner, 92) < 0) { return inner; }
+  if (n <= 0) { return rz_str_empty(); }
+  if (rz_str_find_byte(inner, 92) < 0) { return inner; }
   var out: uint8* = rz_arena_alloc(arena, n + 1);
-  if (out == 0) { return raize_str_empty(); }
+  if (out == 0) { return rz_str_empty(); }
   var o: int64 = 0;
   var i: int64 = 0;
   while (i < n) {
@@ -253,7 +253,7 @@ export fn rz_json_unescape(inner: string, arena: RzArena*) -> string {
     o = o + 1;
     i = i + 2;
   }
-  return raize_str_view(out, o);
+  return rz_str_view(out, o);
 }
 
 export fn rz_json_get_str(body: string, key: string, out: string*, arena: RzArena*) -> bool {
@@ -264,7 +264,7 @@ export fn rz_json_get_str(body: string, key: string, out: string*, arena: RzAren
   if (body.chars[at] != 34) { return false; }
   var end: int64 = rz_json_string_end(body, at);
   if (end < 0) { return false; }
-  var inner: string = raize_str_sub(body, at + 1, end - 1);
+  var inner: string = rz_str_sub(body, at + 1, end - 1);
   *out = rz_json_unescape(inner, arena);
   return true;
 }
@@ -300,8 +300,8 @@ export fn rz_json_get_int(body: string, key: string, out: int64*) -> bool {
 
 export fn rz_json_get_bool(body: string, key: string, out: bool*) -> bool {
   var raw: string = rz_json_raw(body, key);
-  if (raize_str_eq(raw, "true")) { *out = true; return true; }
-  if (raize_str_eq(raw, "false")) { *out = false; return true; }
+  if (rz_str_eq(raw, "true")) { *out = true; return true; }
+  if (rz_str_eq(raw, "false")) { *out = false; return true; }
   return false;
 }
 
@@ -310,33 +310,33 @@ export fn rz_json_get_bool(body: string, key: string, out: bool*) -> bool {
 // ---------------------------------------------------------------------------
 
 // Escapes `s` into `buf` *without* the surrounding quotes.
-export fn rz_json_escape_into(buf: RaizeBuf*, s: string) {
+export fn rz_json_escape_into(buf: RzBuf*, s: string) {
   var n: int64 = (int64)s.length;
   var i: int64 = 0;
   while (i < n) {
     var c: int32 = (int32)s.chars[i];
     if (c == 34) {
-      raize_buf_add(buf, "\\\"");
+      rz_buf_add(buf, "\\\"");
     } else if (c == 92) {
-      raize_buf_add(buf, "\\\\");
+      rz_buf_add(buf, "\\\\");
     } else if (c == 10) {
-      raize_buf_add(buf, "\\n");
+      rz_buf_add(buf, "\\n");
     } else if (c == 13) {
-      raize_buf_add(buf, "\\r");
+      rz_buf_add(buf, "\\r");
     } else if (c == 9) {
-      raize_buf_add(buf, "\\t");
+      rz_buf_add(buf, "\\t");
     } else if (c == 8) {
-      raize_buf_add(buf, "\\b");
+      rz_buf_add(buf, "\\b");
     } else if (c == 12) {
-      raize_buf_add(buf, "\\f");
+      rz_buf_add(buf, "\\f");
     } else if (c < 32) {
-      raize_buf_add(buf, "\\u00");
+      rz_buf_add(buf, "\\u00");
       var hi: int32 = (c >> 4) & 15;
       var lo: int32 = c & 15;
-      if (hi < 10) { raize_buf_add_byte(buf, 48 + hi); } else { raize_buf_add_byte(buf, 87 + hi); }
-      if (lo < 10) { raize_buf_add_byte(buf, 48 + lo); } else { raize_buf_add_byte(buf, 87 + lo); }
+      if (hi < 10) { rz_buf_add_byte(buf, 48 + hi); } else { rz_buf_add_byte(buf, 87 + hi); }
+      if (lo < 10) { rz_buf_add_byte(buf, 48 + lo); } else { rz_buf_add_byte(buf, 87 + lo); }
     } else {
-      raize_buf_add_byte(buf, c);
+      rz_buf_add_byte(buf, c);
     }
     i = i + 1;
   }
@@ -346,18 +346,18 @@ export fn rz_json_escape_into(buf: RaizeBuf*, s: string) {
   // Mettle strings escape '{' as '{{' (interpolation); '}' is literal.
   var doc: string = "{{\"a\":1,\"b\":\"two\",\"c\":{{\"a\":99},\"d\":[1,2,{{\"x\":1}],\"e\":null,\"f\":true}";
   if (!rz_json_has(doc, "a")) { return 1; }
-  if (!raize_str_eq(rz_json_raw(doc, "a"), "1")) { return 2; }
-  if (!raize_str_eq(rz_json_raw(doc, "b"), "\"two\"")) { return 3; }
+  if (!rz_str_eq(rz_json_raw(doc, "a"), "1")) { return 2; }
+  if (!rz_str_eq(rz_json_raw(doc, "b"), "\"two\"")) { return 3; }
   // nested "a" is not the top-level "a"
-  if (!raize_str_eq(rz_json_raw(doc, "c"), "{{\"a\":99}")) { return 4; }
-  if (!raize_str_eq(rz_json_raw(doc, "d"), "[1,2,{{\"x\":1}]")) { return 5; }
+  if (!rz_str_eq(rz_json_raw(doc, "c"), "{{\"a\":99}")) { return 4; }
+  if (!rz_str_eq(rz_json_raw(doc, "d"), "[1,2,{{\"x\":1}]")) { return 5; }
   if (!rz_json_is_null(doc, "e")) { return 6; }
   if (rz_json_has(doc, "zzz")) { return 7; }
   if (rz_json_raw(doc, "b").length != 5) { return 8; }
   // whitespace everywhere
   var ws: string = "  {{ \"k\" : \"v\" , \"n\" : 42 }  ";
-  if (!raize_str_eq(rz_json_raw(ws, "k"), "\"v\"")) { return 9; }
-  if (!raize_str_eq(rz_json_raw(ws, "n"), "42")) { return 10; }
+  if (!rz_str_eq(rz_json_raw(ws, "k"), "\"v\"")) { return 9; }
+  if (!rz_str_eq(rz_json_raw(ws, "n"), "42")) { return 10; }
   // not an object / malformed / truncated
   if (rz_json_has("[1,2]", "a")) { return 11; }
   if (rz_json_has("", "a")) { return 12; }
@@ -371,11 +371,11 @@ export fn rz_json_escape_into(buf: RaizeBuf*, s: string) {
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 1; }
   var doc: string = "{{\"s\":\"hi\\nthere\",\"q\":\"a\\\"b\",\"u\":\"\\u0041\\u00e9\",\"i\":-42,\"big\":9223372036854775807,\"b\":true,\"n\":null,\"f\":1.5}";
-  var sv: string = raize_str_empty();
+  var sv: string = rz_str_empty();
   if (!rz_json_get_str(doc, "s", &sv, arena)) { rz_arena_free(arena); return 2; }
-  if (!raize_str_eq(sv, "hi\nthere")) { rz_arena_free(arena); return 3; }
+  if (!rz_str_eq(sv, "hi\nthere")) { rz_arena_free(arena); return 3; }
   if (!rz_json_get_str(doc, "q", &sv, arena)) { rz_arena_free(arena); return 4; }
-  if (!raize_str_eq(sv, "a\"b")) { rz_arena_free(arena); return 5; }
+  if (!rz_str_eq(sv, "a\"b")) { rz_arena_free(arena); return 5; }
   if (!rz_json_get_str(doc, "u", &sv, arena)) { rz_arena_free(arena); return 6; }
   if (sv.length != 3) { rz_arena_free(arena); return 7; }   // A + 0xc3 0xa9
   var iv: int64 = 0;
@@ -398,29 +398,29 @@ export fn rz_json_escape_into(buf: RaizeBuf*, s: string) {
 }
 
 @test fn t_rz_json_escape() -> int32 {
-  var b: RaizeBuf* = raize_buf_new_cap(64);
+  var b: RzBuf* = rz_buf_new_cap(64);
   if (b == 0) { return 1; }
   var s: string = "a\"b\\c\nd\te";
   rz_json_escape_into(b, s);
-  var out: string = raize_buf_str(b);
-  if (!raize_str_eq(out, "a\\\"b\\\\c\\nd\\te")) { raize_buf_free(b); return 2; }
+  var out: string = rz_buf_str(b);
+  if (!rz_str_eq(out, "a\\\"b\\\\c\\nd\\te")) { rz_buf_free(b); return 2; }
   b->len = 0;
   var raw: uint8[1];
   raw[0] = 1;
-  var ctl: string = raize_str_view(&raw[0], 1);
+  var ctl: string = rz_str_view(&raw[0], 1);
   rz_json_escape_into(b, ctl);
-  if (!raize_str_eq(raize_buf_str(b), "\\u0001")) { raize_buf_free(b); return 3; }
-  raize_buf_free(b);
+  if (!rz_str_eq(rz_buf_str(b), "\\u0001")) { rz_buf_free(b); return 3; }
+  rz_buf_free(b);
   return 0;
 }
 
 @test fn t_rz_json_array_at() -> int32 {
   var msg: string = "[\"1\", null, \"room:lobby\", \"phx_join\", {{\"a\": [1, 2], \"b\": \"]\"}]";
-  var v: string = raize_str_empty();
-  if (!rz_json_array_at(msg, 0, &v) || !raize_str_eq(v, "\"1\"")) { return 1; }
-  if (!rz_json_array_at(msg, 1, &v) || !raize_str_eq(v, "null")) { return 2; }
-  if (!rz_json_array_at(msg, 2, &v) || !raize_str_eq(v, "\"room:lobby\"")) { return 3; }
-  if (!rz_json_array_at(msg, 4, &v) || !raize_str_eq(v, "{{\"a\": [1, 2], \"b\": \"]\"}")) { return 4; }
+  var v: string = rz_str_empty();
+  if (!rz_json_array_at(msg, 0, &v) || !rz_str_eq(v, "\"1\"")) { return 1; }
+  if (!rz_json_array_at(msg, 1, &v) || !rz_str_eq(v, "null")) { return 2; }
+  if (!rz_json_array_at(msg, 2, &v) || !rz_str_eq(v, "\"room:lobby\"")) { return 3; }
+  if (!rz_json_array_at(msg, 4, &v) || !rz_str_eq(v, "{{\"a\": [1, 2], \"b\": \"]\"}")) { return 4; }
   if (rz_json_array_at(msg, 5, &v)) { return 5; }
   if (rz_json_array_at("{{\"a\": 1}", 0, &v)) { return 6; }
   if (rz_json_array_at("[]", 0, &v)) { return 7; }

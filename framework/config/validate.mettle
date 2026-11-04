@@ -84,7 +84,7 @@ fn rz_cfg_bad_str(e: RzConfigErrors*, label: string, reason: string) {
 fn rz_cfg_checks(c: RzConfig*, e: RzConfigErrors*, first: int32*) -> bool {
   var bad: bool = false;
 
-  if (raize_str_len(rz_config_bind(c)) == 0) {
+  if (rz_str_len(rz_config_bind(c)) == 0) {
     rz_cfg_bad_str(e, "RAIZE_BIND_ADDR", "must be a non-empty address");
     if (*first == 0) { *first = RZ_CFG_E_BIND; }
     bad = true;
@@ -124,22 +124,22 @@ fn rz_cfg_checks(c: RzConfig*, e: RzConfigErrors*, first: int32*) -> bool {
     if (*first == 0) { *first = RZ_CFG_E_CACHE; }
     bad = true;
   }
-  if (raize_str_len(rz_config_static_root(c)) == 0) {
+  if (rz_str_len(rz_config_static_root(c)) == 0) {
     rz_cfg_bad_str(e, "RAIZE_STATIC_ROOT", "must be a non-empty path");
     if (*first == 0) { *first = RZ_CFG_E_STATIC_ROOT; }
     bad = true;
   }
-  if (raize_str_len(rz_config_template_root(c)) == 0) {
+  if (rz_str_len(rz_config_template_root(c)) == 0) {
     rz_cfg_bad_str(e, "RAIZE_TEMPLATE_ROOT", "must be a non-empty path");
     if (*first == 0) { *first = RZ_CFG_E_TEMPLATE_ROOT; }
     bad = true;
   }
-  if (raize_str_len(rz_config_allow_origin(c)) == 0) {
+  if (rz_str_len(rz_config_allow_origin(c)) == 0) {
     rz_cfg_bad_str(e, "RAIZE_ALLOWED_ORIGIN", "must be a non-empty origin");
     if (*first == 0) { *first = RZ_CFG_E_ORIGIN; }
     bad = true;
   }
-  if (raize_str_len(rz_config_env(c)) == 0) {
+  if (rz_str_len(rz_config_env(c)) == 0) {
     rz_cfg_bad_str(e, "env", "must be a non-empty name");
     if (*first == 0) { *first = RZ_CFG_E_ENV; }
     bad = true;
@@ -178,7 +178,7 @@ export fn rz_config_validate_roots(c: RzConfig*, e: RzConfigErrors*) -> int32 {
   var bad: bool = false;
 
   var sr: string = rz_config_static_root(c);
-  if (raize_str_len(sr) == 0) {
+  if (rz_str_len(sr) == 0) {
     rz_cfg_bad_str(e, "RAIZE_STATIC_ROOT", "must be a non-empty path");
     bad = true;
   } else if (!rz_cfg_dir_exists(sr)) {
@@ -187,7 +187,7 @@ export fn rz_config_validate_roots(c: RzConfig*, e: RzConfigErrors*) -> int32 {
   }
 
   var tr: string = rz_config_template_root(c);
-  if (raize_str_len(tr) == 0) {
+  if (rz_str_len(tr) == 0) {
     rz_cfg_bad_str(e, "RAIZE_TEMPLATE_ROOT", "must be a non-empty path");
     bad = true;
   } else if (!rz_cfg_dir_exists(tr)) {
@@ -204,10 +204,10 @@ export fn rz_config_validate_roots_code(c: RzConfig*) -> int32 {
   if (c == 0) { return RZ_CFG_E_ARGS; }
   if (c->frozen) { return RZ_CFG_E_FROZEN; }
   var sr: string = rz_config_static_root(c);
-  if (raize_str_len(sr) == 0) { return RZ_CFG_E_STATIC_ROOT; }
+  if (rz_str_len(sr) == 0) { return RZ_CFG_E_STATIC_ROOT; }
   if (!rz_cfg_dir_exists(sr)) { return RZ_CFG_E_STATIC_ROOT_MISSING; }
   var tr: string = rz_config_template_root(c);
-  if (raize_str_len(tr) == 0) { return RZ_CFG_E_TEMPLATE_ROOT; }
+  if (rz_str_len(tr) == 0) { return RZ_CFG_E_TEMPLATE_ROOT; }
   if (!rz_cfg_dir_exists(tr)) { return RZ_CFG_E_TEMPLATE_ROOT_MISSING; }
   return RZ_CFG_OK;
 }

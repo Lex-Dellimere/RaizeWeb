@@ -45,7 +45,7 @@ fn rz_date_put4(buf: uint8*, at: int64, v: int64) {
 // truncated date.
 export fn rz_http_date(buf: uint8*, cap: int64, now_secs: int64) -> string {
   var epoch_secs: int64 = now_secs;
-  if (buf == 0 || cap < 30) { return raize_str_empty(); }
+  if (buf == 0 || cap < 30) { return rz_str_empty(); }
   var days: int64 = epoch_secs / 86400;
   var sod: int64 = epoch_secs - days * 86400;
   if (sod < 0) { sod = sod + 86400; days = days - 1; }
@@ -114,16 +114,16 @@ export fn rz_http_date(buf: uint8*, cap: int64, now_secs: int64) -> string {
   buf[27] = 77;  // M
   buf[28] = 84;  // T
   buf[29] = 0;
-  return raize_str_view(buf, 29);
+  return rz_str_view(buf, 29);
 }
 
 @test fn t_rz_http_date() -> int32 {
   var buf: uint8[32];
-  if (!raize_str_eq(rz_http_date(&buf[0], 32, 0), "Thu, 01 Jan 1970 00:00:00 GMT")) { return 1; }
+  if (!rz_str_eq(rz_http_date(&buf[0], 32, 0), "Thu, 01 Jan 1970 00:00:00 GMT")) { return 1; }
   // 784111777 = Sun, 06 Nov 1994 08:49:37 GMT (the RFC's own example)
-  if (!raize_str_eq(rz_http_date(&buf[0], 32, 784111777), "Sun, 06 Nov 1994 08:49:37 GMT")) { return 2; }
-  if (!raize_str_eq(rz_http_date(&buf[0], 32, 1700000000), "Tue, 14 Nov 2023 22:13:20 GMT")) { return 3; }
-  if (!raize_str_eq(rz_http_date(&buf[0], 32, 951782400), "Tue, 29 Feb 2000 00:00:00 GMT")) { return 4; }
+  if (!rz_str_eq(rz_http_date(&buf[0], 32, 784111777), "Sun, 06 Nov 1994 08:49:37 GMT")) { return 2; }
+  if (!rz_str_eq(rz_http_date(&buf[0], 32, 1700000000), "Tue, 14 Nov 2023 22:13:20 GMT")) { return 3; }
+  if (!rz_str_eq(rz_http_date(&buf[0], 32, 951782400), "Tue, 29 Feb 2000 00:00:00 GMT")) { return 4; }
   if (rz_http_date(&buf[0], 29, 0).length != 0) { return 5; }
   return 0;
 }

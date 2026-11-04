@@ -43,13 +43,13 @@ fn rz_fail(t: RzTemplate*, code: int32, at: int64) -> int32 {
 // unambiguously non-numeric.
 fn rz_name_start(c: int32) -> bool {
   if (c == 95) { return true; }
-  return raize_char_is_alpha(c);
+  return rz_char_is_alpha(c);
 }
 
 fn rz_name_char(c: int32) -> bool {
   if (c == 95 || c == 46 || c == 45) { return true; }
-  if (raize_char_is_digit(c)) { return true; }
-  return raize_char_is_alpha(c);
+  if (rz_char_is_digit(c)) { return true; }
+  return rz_char_is_alpha(c);
 }
 
 // Trims SP/HTAB around the byte range. Newlines are not trimmed: a tag that
@@ -178,7 +178,7 @@ fn rz_scan_body(t: RzTemplate*, st: RzScan*, refs: RzTemplateRef*, ref_count: in
 
     // {# comment #}
     if (src.chars[at + 1] == 35) {
-      var cend: int64 = raize_str_find_from(src, "#}", at + 2);
+      var cend: int64 = rz_str_find_from(src, "#}", at + 2);
       if (cend < 0) { return rz_fail(t, RZ_TPL_E_COMMENT, at); }
       st->pos = cend + 2;
       continue;
@@ -187,7 +187,7 @@ fn rz_scan_body(t: RzTemplate*, st: RzScan*, refs: RzTemplateRef*, ref_count: in
     var p: int64 = at + 2;
     // {{{ raw }}}
     if (p < n && src.chars[p] == 123) {
-      var rend: int64 = raize_str_find_from(src, "}}}", p + 1);
+      var rend: int64 = rz_str_find_from(src, "}}}", p + 1);
       if (rend < 0) { return rz_fail(t, RZ_TPL_E_TAG, at); }
       var rn: RzName = rz_name_of(src, p + 1, rend);
       if (!rz_name_ok(src, rn)) { return rz_fail(t, RZ_TPL_E_NAME, at); }
@@ -204,7 +204,7 @@ fn rz_scan_body(t: RzTemplate*, st: RzScan*, refs: RzTemplateRef*, ref_count: in
     // {{#section}}
     if (p < n && src.chars[p] == 35) {
       if (st->in_section) { return rz_fail(t, RZ_TPL_E_SECTION, at); }
-      var send: int64 = raize_str_find_from(src, "}}", p + 1);
+      var send: int64 = rz_str_find_from(src, "}}", p + 1);
       if (send < 0) { return rz_fail(t, RZ_TPL_E_TAG, at); }
       var sn: RzName = rz_name_of(src, p + 1, send);
       if (!rz_name_ok(src, sn)) { return rz_fail(t, RZ_TPL_E_NAME, at); }
@@ -230,7 +230,7 @@ fn rz_scan_body(t: RzTemplate*, st: RzScan*, refs: RzTemplateRef*, ref_count: in
     // {{/section}}
     if (p < n && src.chars[p] == 47) {
       if (!st->in_section) { return rz_fail(t, RZ_TPL_E_SECTION, at); }
-      var cend2: int64 = raize_str_find_from(src, "}}", p + 1);
+      var cend2: int64 = rz_str_find_from(src, "}}", p + 1);
       if (cend2 < 0) { return rz_fail(t, RZ_TPL_E_TAG, at); }
       var cn: RzName = rz_name_of(src, p + 1, cend2);
       if (!rz_name_ok(src, cn)) { return rz_fail(t, RZ_TPL_E_NAME, at); }
@@ -242,7 +242,7 @@ fn rz_scan_body(t: RzTemplate*, st: RzScan*, refs: RzTemplateRef*, ref_count: in
     }
 
     // {{name}} — the default, escaped substitution.
-    var vend: int64 = raize_str_find_from(src, "}}", p);
+    var vend: int64 = rz_str_find_from(src, "}}", p);
     if (vend < 0) { return rz_fail(t, RZ_TPL_E_TAG, at); }
     var vn: RzName = rz_name_of(src, p, vend);
     if (vn.len <= 0) { return rz_fail(t, RZ_TPL_E_NAME, at); }

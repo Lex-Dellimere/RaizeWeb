@@ -39,19 +39,19 @@ fn h_echo(ctx: RzContext*) -> int32 {
 
 // GET /json — the read-only JSON accessors, in both directions.
 fn h_json(ctx: RzContext*) -> int32 {
-  var b: RaizeBuf* = raize_buf_new_cap(128);
+  var b: RzBuf* = rz_buf_new_cap(128);
   if (b == 0) { return rz_ctx_text(ctx, 500, "oom\n"); }
   var n: int64 = 0;
   if (rz_json_get_int(ctx->req->body, "n", &n)) {
-    raize_buf_add(b, "{{\"n\":");
-    raize_buf_add_int(b, n * 2);
-    raize_buf_add(b, "}");
+    rz_buf_add(b, "{{\"n\":");
+    rz_buf_add_int(b, n * 2);
+    rz_buf_add(b, "}");
   } else {
-    raize_buf_add(b, "{{\"n\":null}");
+    rz_buf_add(b, "{{\"n\":null}");
   }
-  var body: string = raize_buf_str(b);
+  var body: string = rz_buf_str(b);
   var rc: int32 = rz_ctx_json(ctx, 200, body);
-  raize_buf_free(b);
+  rz_buf_free(b);
   return rc;
 }
 
@@ -62,14 +62,14 @@ fn h_method(ctx: RzContext*) -> int32 {
 fn handle(ctx: RzContext*) -> int32 {
   var req: RzRequest* = ctx->req;
   if (rz_req_is_post(req)) {
-    if (raize_str_eq(req->path, "/echo")) { return h_echo(ctx); }
-    if (raize_str_eq(req->path, "/")) { return h_method(ctx); }
+    if (rz_str_eq(req->path, "/echo")) { return h_echo(ctx); }
+    if (rz_str_eq(req->path, "/")) { return h_method(ctx); }
     return rz_ctx_not_found(ctx);
   }
   if (rz_req_is_get(req) || rz_req_is_head(req)) {
-    if (raize_str_eq(req->path, "/")) { return h_root(ctx); }
-    if (raize_str_eq(req->path, "/incremental")) { return h_incremental(ctx); }
-    if (raize_str_eq(req->path, "/json")) { return h_json(ctx); }
+    if (rz_str_eq(req->path, "/")) { return h_root(ctx); }
+    if (rz_str_eq(req->path, "/incremental")) { return h_incremental(ctx); }
+    if (rz_str_eq(req->path, "/json")) { return h_json(ctx); }
   }
   return rz_ctx_not_found(ctx);
 }

@@ -49,23 +49,23 @@ enum TodosMsg { Draft(string), Add, Toggle(int32), Remove(int32), ClearDone, Nud
 // ---- state ----------------------------------------------------------------
 
 fn todos_set_draft(s: Todos*, text: string) {
-  if (s->draft.length > 0) { raize_str_free(s->draft); }
-  s->draft = raize_str_empty();
-  if (text.length > 0) { s->draft = raize_str_dup(text); }
+  if (s->draft.length > 0) { rz_str_free(s->draft); }
+  s->draft = rz_str_empty();
+  if (text.length > 0) { s->draft = rz_str_dup(text); }
 }
 
 fn todos_add(s: Todos*, title: string) {
-  var t: string = raize_str_trim(title);    // a view: copied below
+  var t: string = rz_str_trim(title);    // a view: copied below
   if (t.length == 0 || (int64)t.length > TITLE_MAX || s->count >= TODO_MAX) { return; }
   s->items[s->count].id = s->next_id;
-  s->items[s->count].title = raize_str_dup(t);
+  s->items[s->count].title = rz_str_dup(t);
   s->items[s->count].done = false;
   s->count = s->count + 1;
   s->next_id = s->next_id + 1;
 }
 
 fn todos_remove_at(s: Todos*, i: int32) {
-  raize_str_free(s->items[i].title);
+  rz_str_free(s->items[i].title);
   var k: int32 = i;
   while (k + 1 < s->count) {
     s->items[k] = s->items[k + 1];
@@ -86,7 +86,7 @@ fn todos_index(s: Todos*, id: int32) -> int32 {
 fn todos_mount(s: Todos*) {
   rz_signal_subscribe("todos:nudges");
   s->next_id = 1;
-  s->draft = raize_str_empty();
+  s->draft = rz_str_empty();
   todos_add(s, "Write a Signal");
   todos_add(s, "Ship it");
 }
@@ -226,7 +226,7 @@ fn handle(ctx: RzContext*) -> int32 {
 
 fn main(argc: int32, argv: cstring*) -> int32 {
   var port: int32 = 8070;
-  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+  if (argc > 1) { port = (int32)rz_str_to_int(rz_str_from_c(argv[1])); }
 
   var hub: RzHub* = rz_hub_new(rz_hub_opts_default());
   if (hub == 0 || rz_hub_start(hub) != 0) { println("todos: hub failed"); return 1; }
@@ -239,7 +239,7 @@ fn main(argc: int32, argv: cstring*) -> int32 {
   var a0: int32 = rz_router_add(g_router, "GET", "/todos", &h_todos);
   var a1: int32 = rz_router_add(g_router, "GET", "/signal/websocket", &h_socket_chans);
   var a2: int32 = rz_router_add(g_router, "GET", "/rz/signal.js", &rz_signal_js);
-  if (a0 != RZ_E_OK || a1 != RZ_E_OK || a2 != RZ_E_OK) { println("todos: routes failed"); return 2; }
+  if (a0 != RZ_OK || a1 != RZ_OK || a2 != RZ_OK) { println("todos: routes failed"); return 2; }
 
   var opts: RzServerOpts = rz_server_opts_default();
   opts.port = port;

@@ -6,7 +6,7 @@
 #      (@test blocks are counted separately): one responsibility per file.
 #   2. A module that keeps its @test blocks inline must stay under 700 lines
 #      total; past that the tests move to a sibling <name>_test.mettle.
-#   3. Every exported name carries rz_ / Rz / RZ_ / raize_.
+#   3. Every exported name carries rz_ / Rz / RZ_.
 set -u
 LIMIT=${LIMIT:-400}
 FAIL=0
@@ -49,7 +49,7 @@ for f in $(find framework -name '*.mettle' | sort); do
     FAIL=$((FAIL + 1))
   fi
 
-  bad=$(grep -E '^export (fn|struct|var|const) ' "$f" | grep -vE '^export (fn|struct|var|const) (rz_|Rz|RZ_|raize_|Raize)' || true)
+  bad=$(grep -E '^export (fn|struct|var|const) ' "$f" | grep -vE '^export (fn|struct|var|const) (rz_|Rz|RZ_)' || true)
   if [ -n "$bad" ]; then
     printf 'FAIL  %-46s exports without rz_/Rz prefix:\n%s\n' "$f" "$bad"
     FAIL=$((FAIL + 1))

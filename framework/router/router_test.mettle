@@ -47,55 +47,55 @@ fn t_h_bogus(c: RzContext*) -> int32 { return 0; }
 // a marker status the test reports as a failure code.
 fn t_h_name_world(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 590; }
-  if (!raize_str_eq(c->req->params[0].name, "name")) { return 591; }
-  if (!raize_str_eq(c->req->params[0].value, "world")) { return 592; }
+  if (!rz_str_eq(c->req->params[0].name, "name")) { return 591; }
+  if (!rz_str_eq(c->req->params[0].value, "world")) { return 592; }
   return 202;
 }
 
 fn t_h_decoded_space(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 593; }
-  if (!raize_str_eq(c->req->params[0].value, "a b")) { return 594; }
+  if (!rz_str_eq(c->req->params[0].value, "a b")) { return 594; }
   return 202;
 }
 
 fn t_h_encoded_slash(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 595; }
-  if (!raize_str_eq(c->req->params[0].value, "a%2Fb")) { return 596; }
+  if (!rz_str_eq(c->req->params[0].value, "a%2Fb")) { return 596; }
   return 202;
 }
 
 fn t_h_rest(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 570; }
-  if (!raize_str_eq(c->req->params[0].name, "rest")) { return 571; }
-  if (!raize_str_eq(c->req->params[0].value, "a/b/c.txt")) { return 572; }
+  if (!rz_str_eq(c->req->params[0].name, "rest")) { return 571; }
+  if (!rz_str_eq(c->req->params[0].value, "a/b/c.txt")) { return 572; }
   return 203;
 }
 
 fn t_h_dot_text(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 575; }
-  if (!raize_str_eq(c->req->params[0].value, "x..y")) { return 576; }
+  if (!rz_str_eq(c->req->params[0].value, "x..y")) { return 576; }
   return 202;
 }
 
 fn t_h_eight_params(c: RzContext*) -> int32 {
   if (c->req->param_count != 8) { return 577; }
-  if (!raize_str_eq(c->req->params[0].name, "p0")) { return 578; }
-  if (!raize_str_eq(c->req->params[7].name, "p7")) { return 579; }
-  if (!raize_str_eq(c->req->params[0].value, "a")) { return 580; }
-  if (!raize_str_eq(c->req->params[7].value, "h")) { return 581; }
+  if (!rz_str_eq(c->req->params[0].name, "p0")) { return 578; }
+  if (!rz_str_eq(c->req->params[7].name, "p7")) { return 579; }
+  if (!rz_str_eq(c->req->params[0].value, "a")) { return 580; }
+  if (!rz_str_eq(c->req->params[7].value, "h")) { return 581; }
   return 209;
 }
 
 fn t_h_three(c: RzContext*) -> int32 {
   if (c->req->param_count != 1) { return 582; }
-  if (!raize_str_eq(c->req->params[0].value, "three")) { return 583; }
+  if (!rz_str_eq(c->req->params[0].value, "three")) { return 583; }
   return 202;
 }
 
 // Asserts a route captured exactly RZ_MAX_PARAMS params, in order.
 fn t_h_max_params(c: RzContext*) -> int32 {
   if (c->req->param_count != RZ_MAX_PARAMS) { return 584; }
-  if (!raize_str_eq(c->req->params[0].name, "p0")) { return 585; }
+  if (!rz_str_eq(c->req->params[0].name, "p0")) { return 585; }
   if (c->req->params[0].value.length != 1) { return 586; }
   var last: RzParam = c->req->params[RZ_MAX_PARAMS - 1];
   if (last.name.length != 3) { return 587; }         // "p15" for 16 params
@@ -103,29 +103,29 @@ fn t_h_max_params(c: RzContext*) -> int32 {
   return 210;
 }
 
-// "/:p0/:p1/..." for n params, owned: free with raize_str_free.
+// "/:p0/:p1/..." for n params, owned: free with rz_str_free.
 fn t_param_pattern(n: int32) -> string {
-  var b: RaizeBuf* = raize_buf_new();
+  var b: RzBuf* = rz_buf_new();
   var i: int32 = 0;
   while (i < n) {
-    raize_buf_add_byte(b, 47);
-    raize_buf_add(b, ":p");
-    raize_buf_add_int(b, (int64)i);
+    rz_buf_add_byte(b, 47);
+    rz_buf_add(b, ":p");
+    rz_buf_add_int(b, (int64)i);
     i = i + 1;
   }
-  return raize_buf_take(b);
+  return rz_buf_take(b);
 }
 
-// "/a/b/c/..." with n one-byte segments, owned: free with raize_str_free.
+// "/a/b/c/..." with n one-byte segments, owned: free with rz_str_free.
 fn t_value_path(n: int32) -> string {
-  var b: RaizeBuf* = raize_buf_new();
+  var b: RzBuf* = rz_buf_new();
   var i: int32 = 0;
   while (i < n) {
-    raize_buf_add_byte(b, 47);
-    raize_buf_add_byte(b, 97 + (i % 26));
+    rz_buf_add_byte(b, 47);
+    rz_buf_add_byte(b, 97 + (i % 26));
     i = i + 1;
   }
-  return raize_buf_take(b);
+  return rz_buf_take(b);
 }
 
 // Builds one request exactly the way the server does: the arena owns the
@@ -155,12 +155,12 @@ fn t_setup_no_params(req: RzRequest*, ctx: RzContext*, res: RzResponse*, arena: 
 fn t_header(res: RzResponse*, name: string) -> string {
   var i: int32 = 0;
   while (i < res->header_count) {
-    if (raize_str_eq_ci(res->headers[i].name, name)) {
+    if (rz_str_eq_ci(res->headers[i].name, name)) {
       return res->headers[i].value;
     }
     i = i + 1;
   }
-  return raize_str_empty();
+  return rz_str_empty();
 }
 
 @test fn t_exact_match() -> int32 {
@@ -168,8 +168,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_OK) { return 3; }
   if (rz_router_count(rt) != 2) { return 4; }
 
   var arena: RzArena* = rz_arena_new();
@@ -194,7 +194,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_param) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_param) != RZ_OK) { return 2; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -206,8 +206,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   t_setup(&req, &ctx, &res, arena, "GET", "/hello/world");
   if (rz_router_handle(rt, &ctx) != 202) { return 3; }
   if (req.param_count != 1) { return 4; }
-  if (!raize_str_eq(req.params[0].name, "name")) { return 5; }
-  if (!raize_str_eq(req.params[0].value, "world")) { return 6; }
+  if (!rz_str_eq(req.params[0].name, "name")) { return 5; }
+  if (!rz_str_eq(req.params[0].value, "world")) { return 6; }
 
   // A param needs a non-empty segment.
   t_setup(&req, &ctx, &res, arena, "GET", "/hello/");
@@ -215,12 +215,12 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (req.param_count != 0) { return 8; }
 
   // Several params, in order.
-  if (rz_router_add(rt, "GET", "/y/:a/:b", &t_h_param) != RZ_E_OK) { return 9; }
+  if (rz_router_add(rt, "GET", "/y/:a/:b", &t_h_param) != RZ_OK) { return 9; }
   t_setup(&req, &ctx, &res, arena, "GET", "/y/one/two");
   if (rz_router_handle(rt, &ctx) != 202) { return 10; }
   if (req.param_count != 2) { return 11; }
-  if (!raize_str_eq(req.params[1].name, "b")) { return 12; }
-  if (!raize_str_eq(req.params[1].value, "two")) { return 13; }
+  if (!rz_str_eq(req.params[1].name, "b")) { return 12; }
+  if (!rz_str_eq(req.params[1].value, "two")) { return 13; }
   return 0;
 }
 
@@ -229,7 +229,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/files/*rest", &t_h_wild) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/files/*rest", &t_h_wild) != RZ_OK) { return 2; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -241,14 +241,14 @@ fn t_header(res: RzResponse*, name: string) -> string {
   t_setup(&req, &ctx, &res, arena, "GET", "/files/a/b/c.txt");
   if (rz_router_handle(rt, &ctx) != 203) { return 3; }
   if (req.param_count != 1) { return 4; }
-  if (!raize_str_eq(req.params[0].name, "rest")) { return 5; }
-  if (!raize_str_eq(req.params[0].value, "a/b/c.txt")) { return 6; }
+  if (!rz_str_eq(req.params[0].name, "rest")) { return 5; }
+  if (!rz_str_eq(req.params[0].value, "a/b/c.txt")) { return 6; }
 
   // Empty tail: "/files/" matches with an empty capture; "/files" has no slash
   // for the wildcard to consume.
   t_setup(&req, &ctx, &res, arena, "GET", "/files/");
   if (rz_router_handle(rt, &ctx) != 203) { return 7; }
-  if (!raize_str_eq(req.params[0].value, "")) { return 8; }
+  if (!rz_str_eq(req.params[0].value, "")) { return 8; }
   t_setup(&req, &ctx, &res, arena, "GET", "/files");
   if (rz_router_handle(rt, &ctx) != 404) { return 9; }
 
@@ -256,15 +256,15 @@ fn t_header(res: RzResponse*, name: string) -> string {
   var deep: string = "/files/a/b/c/d/e/f/g/h/i/j/k";
   t_setup(&req, &ctx, &res, arena, "GET", deep);
   if (rz_router_handle(rt, &ctx) != 203) { return 10; }
-  if (!raize_str_eq(req.params[0].value, "a/b/c/d/e/f/g/h/i/j/k")) { return 11; }
+  if (!rz_str_eq(req.params[0].value, "a/b/c/d/e/f/g/h/i/j/k")) { return 11; }
 
   // A wildcard route answers 405 for methods it did not register.
   t_setup(&req, &ctx, &res, arena, "POST", "/files/a/b");
   if (rz_router_handle(rt, &ctx) != 405) { return 12; }
-  if (!raize_str_eq(t_header(&res, "Allow"), "GET")) { return 13; }
+  if (!rz_str_eq(t_header(&res, "Allow"), "GET")) { return 13; }
 
   // A wildcard in the middle of a pattern is a startup error.
-  if (rz_router_add(rt, "GET", "/x/*rest/y", &t_h_wild) != RZ_E_PATTERN) { return 14; }
+  if (rz_router_add(rt, "GET", "/x/*rest/y", &t_h_wild) != RZ_E_INVALID) { return 14; }
   return 0;
 }
 
@@ -273,8 +273,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_OK) { return 3; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -302,8 +302,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "POST", "/form", &t_h_post) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "POST", "/form", &t_h_post) != RZ_OK) { return 3; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -317,34 +317,34 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rz_router_handle(rt, &ctx) != 405) { return 5; }
   if (ctx.status != 405) { return 6; }
   if (res.status != 405) { return 13; }
-  if (!raize_str_eq(t_header(&res, "Allow"), "GET")) { return 7; }
+  if (!rz_str_eq(t_header(&res, "Allow"), "GET")) { return 7; }
 
   // GET on a POST-only path.
   t_setup(&req, &ctx, &res, arena, "GET", "/form");
   if (rz_router_handle(rt, &ctx) != 405) { return 8; }
-  if (!raize_str_eq(t_header(&res, "Allow"), "POST")) { return 9; }
+  if (!rz_str_eq(t_header(&res, "Allow"), "POST")) { return 9; }
 
   // An unknown-but-legal token still gets 405 on a matching path.
   t_setup(&req, &ctx, &res, arena, "PURGE", "/");
   if (rz_router_handle(rt, &ctx) != 405) { return 10; }
-  if (!raize_str_eq(t_header(&res, "Allow"), "GET")) { return 11; }
+  if (!rz_str_eq(t_header(&res, "Allow"), "GET")) { return 11; }
 
   // Registering an unknown method is refused.
-  if (rz_router_add(rt, "PURGE", "/x", &t_h_root) != RZ_E_METHOD) { return 12; }
+  if (rz_router_add(rt, "PURGE", "/x", &t_h_root) != RZ_E_INVALID) { return 12; }
   return 0;
 }
 
 @test fn t_allow_string() -> int32 {
   var buf: uint8[96];
-  if (!raize_str_eq(rz_router_allow(RZ_BIT_GET, &buf[0], 96), "GET")) { return 1; }
-  if (!raize_str_eq(rz_router_allow(RZ_BIT_GET | RZ_BIT_HEAD, &buf[0], 96), "GET, HEAD")) { return 4; }
-  if (!raize_str_eq(rz_router_allow(RZ_BIT_POST, &buf[0], 96), "POST")) { return 2; }
+  if (!rz_str_eq(rz_router_allow(RZ_BIT_GET, &buf[0], 96), "GET")) { return 1; }
+  if (!rz_str_eq(rz_router_allow(RZ_BIT_GET | RZ_BIT_HEAD, &buf[0], 96), "GET, HEAD")) { return 4; }
+  if (!rz_str_eq(rz_router_allow(RZ_BIT_POST, &buf[0], 96), "POST")) { return 2; }
   var m: int32 = RZ_BIT_GET | RZ_BIT_POST | RZ_BIT_OPTIONS;
-  if (!raize_str_eq(rz_router_allow(m, &buf[0], 96), "GET, POST, OPTIONS")) { return 3; }
+  if (!rz_str_eq(rz_router_allow(m, &buf[0], 96), "GET, POST, OPTIONS")) { return 3; }
   // Every method at once still fits the 96-byte buffer.
   var all: int32 = RZ_BIT_GET | RZ_BIT_HEAD | RZ_BIT_POST | RZ_BIT_PUT | RZ_BIT_PATCH
                  | RZ_BIT_DELETE | RZ_BIT_OPTIONS | RZ_BIT_CONNECT | RZ_BIT_TRACE;
-  if (!raize_str_eq(rz_router_allow(all, &buf[0], 96),
+  if (!rz_str_eq(rz_router_allow(all, &buf[0], 96),
                     "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, CONNECT, TRACE")) { return 5; }
   return 0;
 }
@@ -354,8 +354,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/a", &t_h_a) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/a/", &t_h_a_slash) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/a", &t_h_a) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/", &t_h_a_slash) != RZ_OK) { return 3; }
   if (rz_router_count(rt) != 2) { return 4; }
 
   var arena: RzArena* = rz_arena_new();
@@ -376,10 +376,10 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt2 == 0) { return 7; }
   defer rz_router_free(rt2);
   rz_router_set_path_decoded(rt2, true);
-  if (rz_router_add(rt2, "GET", "/a", &t_h_a) != RZ_E_OK) { return 8; }
+  if (rz_router_add(rt2, "GET", "/a", &t_h_a) != RZ_OK) { return 8; }
   t_setup(&req, &ctx, &res, arena, "GET", "/a/");
   if (rz_router_handle(rt2, &ctx) != 404) { return 9; }
-  if (rz_router_add(rt2, "GET", "/a/:x", &t_h_param) != RZ_E_OK) { return 10; }
+  if (rz_router_add(rt2, "GET", "/a/:x", &t_h_param) != RZ_OK) { return 10; }
   t_setup(&req, &ctx, &res, arena, "GET", "/a/");
   if (rz_router_handle(rt2, &ctx) != 404) { return 11; }
   return 0;
@@ -390,7 +390,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   // Fallback mode: the router decodes, which is what makes "%2e%2e" dangerous.
-  if (rz_router_add(rt, "GET", "/a/:x", &t_h_dot_text) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/:x", &t_h_dot_text) != RZ_OK) { return 2; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -428,17 +428,18 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/a/:x", &t_h_param) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/:x", &t_h_param) != RZ_OK) { return 2; }
   // Same pattern, same method: refused, and the first handler survives.
-  if (rz_router_add(rt, "GET", "/a/:x", &t_h_second) != RZ_E_DUPLICATE) { return 3; }
-  if (rz_router_error(rt) != RZ_E_DUPLICATE) { return 4; }
+  if (rz_router_add(rt, "GET", "/a/:x", &t_h_second) != RZ_E_CONFLICT) { return 3; }
+  if (rz_router_error(rt) != RZ_ROUTER_E_DUPLICATE) { return 4; }
   // Same shape, different param name: ambiguous, refused.
   if (rz_router_add(rt, "POST", "/a/:y", &t_h_second) != RZ_E_CONFLICT) { return 5; }
+  if (rz_router_error(rt) != RZ_ROUTER_E_NAME_CONFLICT) { return 12; }
   // Same shape, same name, another method: allowed.
-  if (rz_router_add(rt, "POST", "/a/:x", &t_h_post) != RZ_E_OK) { return 6; }
+  if (rz_router_add(rt, "POST", "/a/:x", &t_h_post) != RZ_OK) { return 6; }
   // Exact duplicate.
-  if (rz_router_add(rt, "DELETE", "/a/b", &t_h_ab) != RZ_E_OK) { return 7; }
-  if (rz_router_add(rt, "DELETE", "/a/b", &t_h_second) != RZ_E_DUPLICATE) { return 8; }
+  if (rz_router_add(rt, "DELETE", "/a/b", &t_h_ab) != RZ_OK) { return 7; }
+  if (rz_router_add(rt, "DELETE", "/a/b", &t_h_second) != RZ_E_CONFLICT) { return 8; }
   if (rz_router_count(rt) != 3) { return 9; }
 
   var arena: RzArena* = rz_arena_new();
@@ -464,9 +465,9 @@ fn t_header(res: RzResponse*, name: string) -> string {
   // write past it. One route at capacity, one past it.
   var full_pattern: string = t_param_pattern(RZ_MAX_PARAMS);
   var rc_full: int32 = rz_router_add(rt, "GET", full_pattern, &t_h_max_params);
-  raize_str_free(full_pattern);
-  if (rc_full != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/ok/:p0/:p1/:p2/:p3/:p4/:p5/:p6/:p7", &t_h_eight_params) != RZ_E_OK) {
+  rz_str_free(full_pattern);
+  if (rc_full != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/ok/:p0/:p1/:p2/:p3/:p4/:p5/:p6/:p7", &t_h_eight_params) != RZ_OK) {
     return 3;
   }
 
@@ -486,7 +487,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   var full: string = t_value_path(RZ_MAX_PARAMS);
   t_setup(&req, &ctx, &res, arena, "GET", full);
   var st: int32 = rz_router_handle(rt, &ctx);
-  raize_str_free(full);
+  rz_str_free(full);
   if (st != 210) { return 6; }
   if (req.param_count != RZ_MAX_PARAMS) { return 7; }
 
@@ -497,12 +498,12 @@ fn t_header(res: RzResponse*, name: string) -> string {
   rz_router_set_path_decoded(rt2, true);
   var over_pattern: string = t_param_pattern(RZ_MAX_PARAMS + 1);
   var rc: int32 = rz_router_add(rt2, "GET", over_pattern, &t_h_max_params);
-  raize_str_free(over_pattern);
-  if (rc != RZ_E_OK) { return 9; }
+  rz_str_free(over_pattern);
+  if (rc != RZ_OK) { return 9; }
   var over_path: string = t_value_path(RZ_MAX_PARAMS + 1);
   t_setup(&req, &ctx, &res, arena, "GET", over_path);
   var st2: int32 = rz_router_handle(rt2, &ctx);
-  raize_str_free(over_path);
+  rz_str_free(over_path);
   if (st2 != 500) { return 10; }
   if (ctx.status != 500) { return 11; }
   if (req.param_count != 0) { return 12; }
@@ -513,8 +514,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt3 == 0) { return 13; }
   defer rz_router_free(rt3);
   rz_router_set_path_decoded(rt3, true);
-  if (rz_router_add(rt3, "GET", "/:x", &t_h_param) != RZ_E_OK) { return 14; }
-  if (rz_router_add(rt3, "GET", "/plain", &t_h_root) != RZ_E_OK) { return 15; }
+  if (rz_router_add(rt3, "GET", "/:x", &t_h_param) != RZ_OK) { return 14; }
+  if (rz_router_add(rt3, "GET", "/plain", &t_h_root) != RZ_OK) { return 15; }
   t_setup_no_params(&req, &ctx, &res, arena, "GET", "/anything");
   if (rz_router_handle(rt3, &ctx) != 500) { return 16; }
   t_setup_no_params(&req, &ctx, &res, arena, "GET", "/plain");
@@ -527,9 +528,9 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/a/:x", &t_h_param) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_E_OK) { return 3; }
-  if (rz_router_add(rt, "GET", "/a/*rest", &t_h_wild) != RZ_E_OK) { return 4; }
+  if (rz_router_add(rt, "GET", "/a/:x", &t_h_param) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/a/b", &t_h_ab) != RZ_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/a/*rest", &t_h_wild) != RZ_OK) { return 4; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -544,16 +545,16 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rz_router_handle(rt, &ctx) != 202) { return 6; }   // then :param
   t_setup(&req, &ctx, &res, arena, "GET", "/a/c/d");
   if (rz_router_handle(rt, &ctx) != 203) { return 7; }   // then *wildcard
-  if (!raize_str_eq(req.params[0].value, "c/d")) { return 8; }
+  if (!rz_str_eq(req.params[0].value, "c/d")) { return 8; }
 
   // Registration order must not change priority.
   var rt3: RzRouter* = rz_router_new();
   if (rt3 == 0) { return 9; }
   defer rz_router_free(rt3);
   rz_router_set_path_decoded(rt3, true);
-  if (rz_router_add(rt3, "GET", "/a/*rest", &t_h_wild) != RZ_E_OK) { return 10; }
-  if (rz_router_add(rt3, "GET", "/a/:x", &t_h_param) != RZ_E_OK) { return 11; }
-  if (rz_router_add(rt3, "GET", "/a/b", &t_h_ab) != RZ_E_OK) { return 12; }
+  if (rz_router_add(rt3, "GET", "/a/*rest", &t_h_wild) != RZ_OK) { return 10; }
+  if (rz_router_add(rt3, "GET", "/a/:x", &t_h_param) != RZ_OK) { return 11; }
+  if (rz_router_add(rt3, "GET", "/a/b", &t_h_ab) != RZ_OK) { return 12; }
   t_setup(&req, &ctx, &res, arena, "GET", "/a/b");
   if (rz_router_handle(rt3, &ctx) != 201) { return 13; }
 
@@ -563,11 +564,11 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt2 == 0) { return 14; }
   defer rz_router_free(rt2);
   rz_router_set_path_decoded(rt2, true);
-  if (rz_router_add(rt2, "GET", "/a/b/d", &t_h_ab) != RZ_E_OK) { return 15; }
-  if (rz_router_add(rt2, "GET", "/a/:x/c", &t_h_backtrack) != RZ_E_OK) { return 16; }
+  if (rz_router_add(rt2, "GET", "/a/b/d", &t_h_ab) != RZ_OK) { return 15; }
+  if (rz_router_add(rt2, "GET", "/a/:x/c", &t_h_backtrack) != RZ_OK) { return 16; }
   t_setup(&req, &ctx, &res, arena, "GET", "/a/b/c");
   if (rz_router_handle(rt2, &ctx) != 208) { return 17; }
-  if (!raize_str_eq(req.params[0].value, "b")) { return 18; }
+  if (!rz_str_eq(req.params[0].value, "b")) { return 18; }
   if (req.param_count != 1) { return 19; }   // the rolled-back capture is gone
   t_setup(&req, &ctx, &res, arena, "GET", "/a/b/d");
   if (rz_router_handle(rt2, &ctx) != 201) { return 20; }
@@ -579,8 +580,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_param) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "POST", "/form", &t_h_post) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_param) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "POST", "/form", &t_h_post) != RZ_OK) { return 3; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -592,11 +593,11 @@ fn t_header(res: RzResponse*, name: string) -> string {
   // the server's job), and params are filled as for GET.
   t_setup(&req, &ctx, &res, arena, "HEAD", "/hello/world");
   if (rz_router_handle(rt, &ctx) != 202) { return 5; }
-  if (!raize_str_eq(req.params[0].value, "world")) { return 6; }
+  if (!rz_str_eq(req.params[0].value, "world")) { return 6; }
   // HEAD where only POST exists: 405 with an Allow that has no GET, so no HEAD.
   t_setup(&req, &ctx, &res, arena, "HEAD", "/form");
   if (rz_router_handle(rt, &ctx) != 405) { return 7; }
-  if (!raize_str_eq(t_header(&res, "Allow"), "POST")) { return 8; }
+  if (!rz_str_eq(t_header(&res, "Allow"), "POST")) { return 8; }
   return 0;
 }
 
@@ -613,8 +614,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
     buf[i] = src.chars[i];
     i = i + 1;
   }
-  var pattern: string = raize_str_view(buf, i);
-  if (rz_router_add(rt, "GET", pattern, &t_h_param) != RZ_E_OK) { return 3; }
+  var pattern: string = rz_str_view(buf, i);
+  if (rz_router_add(rt, "GET", pattern, &t_h_param) != RZ_OK) { return 3; }
   i = 0;
   while (i < 16) {
     buf[i] = 88;   // 'X'
@@ -631,8 +632,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   rz_router_set_path_decoded(rt, true);
   t_setup(&req, &ctx, &res, arena, "GET", "/hello/bob");
   if (rz_router_handle(rt, &ctx) != 202) { return 4; }
-  if (!raize_str_eq(req.params[0].name, "who")) { return 5; }
-  if (!raize_str_eq(req.params[0].value, "bob")) { return 6; }
+  if (!rz_str_eq(req.params[0].name, "who")) { return 5; }
+  if (!rz_str_eq(req.params[0].value, "bob")) { return 6; }
   return 0;
 }
 
@@ -645,14 +646,14 @@ fn t_header(res: RzResponse*, name: string) -> string {
   // Both shapes of a prefix must join without "//" and land on the same path.
   var g1: RzGroup* = rz_router_group(rt, "/api/");
   if (g1 == 0) { return 2; }
-  if (rz_group_add(g1, "GET", "/users", &t_h_param) != RZ_E_OK) { return 3; }
+  if (rz_group_add(g1, "GET", "/users", &t_h_param) != RZ_OK) { return 3; }
   var g2: RzGroup* = rz_router_group(rt, "/api");
   if (g2 == 0) { return 4; }
-  if (rz_group_add(g2, "GET", "users", &t_h_param) != RZ_E_DUPLICATE) { return 5; }
-  if (rz_group_add(g2, "GET", "/files/*rest", &t_h_rest) != RZ_E_OK) { return 6; }
+  if (rz_group_add(g2, "GET", "users", &t_h_param) != RZ_E_CONFLICT) { return 5; }
+  if (rz_group_add(g2, "GET", "/files/*rest", &t_h_rest) != RZ_OK) { return 6; }
   var g3: RzGroup* = rz_router_group(rt, "");
   if (g3 == 0) { return 7; }
-  if (rz_group_add(g3, "GET", "/root", &t_h_root) != RZ_E_OK) { return 8; }
+  if (rz_group_add(g3, "GET", "/root", &t_h_root) != RZ_OK) { return 8; }
   if (rz_router_count(rt) != 3) { return 9; }
 
   var arena: RzArena* = rz_arena_new();
@@ -665,7 +666,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rz_router_handle(rt, &ctx) != 202) { return 10; }
   t_setup(&req, &ctx, &res, arena, "GET", "/api/files/a/b/c.txt");
   if (rz_router_handle(rt, &ctx) != 203) { return 11; }
-  if (!raize_str_eq(req.params[0].value, "a/b/c.txt")) { return 12; }
+  if (!rz_str_eq(req.params[0].value, "a/b/c.txt")) { return 12; }
   t_setup(&req, &ctx, &res, arena, "GET", "/root");
   if (rz_router_handle(rt, &ctx) != 200) { return 13; }
 
@@ -673,9 +674,9 @@ fn t_header(res: RzResponse*, name: string) -> string {
   rz_group_end(g1);
   var g4: RzGroup* = rz_router_group(rt, "/v2");
   if (g4 == 0) { return 14; }
-  if (rz_group_add(g4, "GET", "/x", &t_h_ab) != RZ_E_OK) { return 15; }
+  if (rz_group_add(g4, "GET", "/x", &t_h_ab) != RZ_OK) { return 15; }
   // A retired handle registers nothing (this is why slots are not reused).
-  if (rz_group_add(g1, "GET", "/y", &t_h_ab) != RZ_E_PATTERN) { return 16; }
+  if (rz_group_add(g1, "GET", "/y", &t_h_ab) != RZ_E_USAGE) { return 16; }
   if (rz_router_group(rt, "bad") != 0) { return 17; }
   // RZ_MAX_GROUPS is a startup limit.
   var n: int32 = 4;
@@ -692,8 +693,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_three) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_three) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/", &t_h_root) != RZ_OK) { return 3; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -712,7 +713,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   req.path = "/hello/three";
   ctx.status = 0;
   if (rz_router_handle(rt, &ctx) != 202) { return 7; }
-  if (!raize_str_eq(req.params[0].value, "three")) { return 8; }
+  if (!rz_str_eq(req.params[0].value, "three")) { return 8; }
   // A stale param_count and a stale status must not leak into the next
   // request on the same connection.
   req.path = "/";
@@ -731,8 +732,8 @@ fn t_header(res: RzResponse*, name: string) -> string {
   defer rz_router_free(rt);
   // Fallback mode: the router owns decoding, so these assertions run in the
   // handler where the decoded buffer is alive.
-  if (rz_router_add(rt, "GET", "/p/:x", &t_h_decoded_space) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/s/:x", &t_h_encoded_slash) != RZ_E_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/p/:x", &t_h_decoded_space) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/s/:x", &t_h_encoded_slash) != RZ_OK) { return 3; }
 
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
@@ -754,10 +755,10 @@ fn t_header(res: RzResponse*, name: string) -> string {
   // In production mode the server already decoded, and the router must not
   // decode again: "%41" stays three characters.
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/lit/:x", &t_h_param) != RZ_E_OK) { return 7; }
+  if (rz_router_add(rt, "GET", "/lit/:x", &t_h_param) != RZ_OK) { return 7; }
   t_setup(&req, &ctx, &res, arena, "GET", "/lit/%41");
   if (rz_router_handle(rt, &ctx) != 202) { return 8; }
-  if (!raize_str_eq(req.params[0].value, "%41")) { return 9; }
+  if (!rz_str_eq(req.params[0].value, "%41")) { return 9; }
   return 0;
 }
 
@@ -767,7 +768,7 @@ fn t_header(res: RzResponse*, name: string) -> string {
   var rt: RzRouter* = rz_router_new();
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
-  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_name_world) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &t_h_name_world) != RZ_OK) { return 2; }
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
   defer rz_arena_free(arena);
@@ -785,15 +786,15 @@ fn t_header(res: RzResponse*, name: string) -> string {
   var rt: RzRouter* = rz_router_new();
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
-  if (rz_router_add(rt, "GET", "", &t_h_root) != RZ_E_PATTERN) { return 2; }
-  if (rz_router_add(rt, "GET", "a", &t_h_root) != RZ_E_PATTERN) { return 3; }
-  if (rz_router_add(rt, "GET", "/a//b", &t_h_root) != RZ_E_PATTERN) { return 4; }
-  if (rz_router_add(rt, "GET", "/a?x=1", &t_h_root) != RZ_E_PATTERN) { return 5; }
-  if (rz_router_add(rt, "GET", "/a#f", &t_h_root) != RZ_E_PATTERN) { return 6; }
-  if (rz_router_add(rt, "GET", "/a/:", &t_h_root) != RZ_E_PATTERN) { return 7; }
-  if (rz_router_add(rt, "GET", "/a/*", &t_h_root) != RZ_E_PATTERN) { return 8; }
-  if (rz_router_add(rt, "GET", "/a/..", &t_h_root) != RZ_E_PATTERN) { return 9; }
-  if (rz_router_add(rt, "GET", "/a/:b:c", &t_h_root) != RZ_E_PATTERN) { return 10; }
+  if (rz_router_add(rt, "GET", "", &t_h_root) != RZ_E_INVALID) { return 2; }
+  if (rz_router_add(rt, "GET", "a", &t_h_root) != RZ_E_INVALID) { return 3; }
+  if (rz_router_add(rt, "GET", "/a//b", &t_h_root) != RZ_E_INVALID) { return 4; }
+  if (rz_router_add(rt, "GET", "/a?x=1", &t_h_root) != RZ_E_INVALID) { return 5; }
+  if (rz_router_add(rt, "GET", "/a#f", &t_h_root) != RZ_E_INVALID) { return 6; }
+  if (rz_router_add(rt, "GET", "/a/:", &t_h_root) != RZ_E_INVALID) { return 7; }
+  if (rz_router_add(rt, "GET", "/a/*", &t_h_root) != RZ_E_INVALID) { return 8; }
+  if (rz_router_add(rt, "GET", "/a/..", &t_h_root) != RZ_E_INVALID) { return 9; }
+  if (rz_router_add(rt, "GET", "/a/:b:c", &t_h_root) != RZ_E_INVALID) { return 10; }
 
   // Per-node sibling capacity: RZ_MAX_LINKS children, then a startup error.
   var rt2: RzRouter* = rz_router_new();
@@ -803,14 +804,14 @@ fn t_header(res: RzResponse*, name: string) -> string {
   while (i < RZ_MAX_LINKS) {
     var p: string = t_num_path("/s", i);
     var rc: int32 = rz_router_add(rt2, "GET", p, &t_h_root);
-    raize_str_free(p);
-    if (rc != RZ_E_OK) { return 12; }
+    rz_str_free(p);
+    if (rc != RZ_OK) { return 12; }
     i = i + 1;
   }
   var over: string = t_num_path("/s", i);
   var rc_over: int32 = rz_router_add(rt2, "GET", over, &t_h_root);
-  raize_str_free(over);
-  if (rc_over != RZ_E_CAPACITY) { return 13; }
+  rz_str_free(over);
+  if (rc_over != RZ_E_FULL) { return 13; }
   if (rz_router_count(rt2) != RZ_MAX_LINKS) { return 14; }
 
   // Route-count capacity: RZ_MAX_ROUTES registrations, then a startup error.
@@ -822,30 +823,30 @@ fn t_header(res: RzResponse*, name: string) -> string {
     var gp: string = t_num_path("/g", g);
     var k: int32 = 0;
     while (k < 32) {
-      var b: RaizeBuf* = raize_buf_new();
-      raize_buf_add(b, gp);
-      raize_buf_add_byte(b, 47);
-      raize_buf_add_int(b, (int64)k);
-      var pat: string = raize_buf_take(b);
+      var b: RzBuf* = rz_buf_new();
+      rz_buf_add(b, gp);
+      rz_buf_add_byte(b, 47);
+      rz_buf_add_int(b, (int64)k);
+      var pat: string = rz_buf_take(b);
       var rc: int32 = rz_router_add(rt3, "GET", pat, &t_h_root);
-      raize_str_free(pat);
-      if (rc != RZ_E_OK) { raize_str_free(gp); return 16; }
+      rz_str_free(pat);
+      if (rc != RZ_OK) { rz_str_free(gp); return 16; }
       k = k + 1;
     }
-    raize_str_free(gp);
+    rz_str_free(gp);
     g = g + 1;
   }
   if (rz_router_count(rt3) != RZ_MAX_ROUTES) { return 17; }
-  if (rz_router_add(rt3, "GET", "/g0/extra", &t_h_root) != RZ_E_CAPACITY) { return 18; }
+  if (rz_router_add(rt3, "GET", "/g0/extra", &t_h_root) != RZ_E_FULL) { return 18; }
   return 0;
 }
 
-// "/{prefix}{n}", owned: free with raize_str_free.
+// "/{prefix}{n}", owned: free with rz_str_free.
 fn t_num_path(prefix: string, n: int32) -> string {
-  var b: RaizeBuf* = raize_buf_new();
-  raize_buf_add(b, prefix);
-  raize_buf_add_int(b, (int64)n);
-  return raize_buf_take(b);
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, prefix);
+  rz_buf_add_int(b, (int64)n);
+  return rz_buf_take(b);
 }
 
 @test fn t_handler_status_sanity() -> int32 {
@@ -853,7 +854,7 @@ fn t_num_path(prefix: string, n: int32) -> string {
   if (rt == 0) { return 1; }
   defer rz_router_free(rt);
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/bogus", &t_h_bogus) != RZ_E_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/bogus", &t_h_bogus) != RZ_OK) { return 2; }
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return 99; }
   defer rz_arena_free(arena);

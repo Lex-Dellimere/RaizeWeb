@@ -54,7 +54,7 @@ export struct RzSignalInst {
   sock: int64;
   topic: string;          // owned: "signal:<name>"
   join_ref: string;       // owned raw JSON
-  subs: RaizeStrList*;    // owned topic names
+  subs: RzStrList*;    // owned topic names
 }
 
 // Written while the app starts (before the server runs), read-only after.
@@ -77,7 +77,7 @@ export fn rz_signal_find_any() -> bool {
 export fn rz_signal_find(name: string) -> RzSignalDef* {
   var i: int32 = 0;
   while (i < g_rz_signal_count) {
-    if (raize_str_eq(g_rz_signals[i].name, name)) { return &g_rz_signals[i]; }
+    if (rz_str_eq(g_rz_signals[i].name, name)) { return &g_rz_signals[i]; }
     i = i + 1;
   }
   return 0;
@@ -133,9 +133,9 @@ export fn rz_signal_inst_new(def: RzSignalDef*, ctx: RzChanCtx*) -> RzSignalInst
   g_rz_signal_ninst = g_rz_signal_ninst + 1;
   inst->def = def;
   inst->sock = ctx->sock;
-  inst->topic = raize_str_dup(ctx->topic);
-  inst->join_ref = raize_str_dup(ctx->join_ref);
-  inst->subs = raize_strlist_new();
+  inst->topic = rz_str_dup(ctx->topic);
+  inst->join_ref = rz_str_dup(ctx->join_ref);
+  inst->subs = rz_strlist_new();
   return inst;
 }
 
@@ -156,12 +156,12 @@ export fn rz_signal_inst_free(inst: RzSignalInst*) {
   free(inst->state);
   var k: int64 = 0;
   while (k < inst->subs->len) {
-    raize_str_free(inst->subs->items[k]);
+    rz_str_free(inst->subs->items[k]);
     k = k + 1;
   }
-  raize_strlist_free(inst->subs);
-  raize_str_free(inst->topic);
-  raize_str_free(inst->join_ref);
+  rz_strlist_free(inst->subs);
+  rz_str_free(inst->topic);
+  rz_str_free(inst->join_ref);
   free((rawptr)inst);
 }
 
@@ -191,18 +191,18 @@ export fn rz_signal_subscribe(topic: string) {
   if (inst == 0 || topic.length == 0) { return; }
   var k: int64 = 0;
   while (k < inst->subs->len) {
-    if (raize_str_eq(inst->subs->items[k], topic)) { return; }
+    if (rz_str_eq(inst->subs->items[k], topic)) { return; }
     k = k + 1;
   }
   if (inst->subs->len >= RZ_SIGNAL_MAX_SUBS) { return; }
-  raize_strlist_push(inst->subs, raize_str_dup(topic));
+  rz_strlist_push(inst->subs, rz_str_dup(topic));
 }
 
 fn rz_signal_listens(inst: RzSignalInst*, topic: string) -> bool {
-  if (raize_str_eq(inst->def->name, topic)) { return true; }
+  if (rz_str_eq(inst->def->name, topic)) { return true; }
   var k: int64 = 0;
   while (k < inst->subs->len) {
-    if (raize_str_eq(inst->subs->items[k], topic)) { return true; }
+    if (rz_str_eq(inst->subs->items[k], topic)) { return true; }
     k = k + 1;
   }
   return false;
@@ -212,24 +212,24 @@ fn rz_signal_listens(inst: RzSignalInst*, topic: string) -> bool {
 // view, and append {"diff": ...} to `out`. Returns 0, 1 for a malformed
 // message, 2 for one this Signal's enum does not have. `changed` is set when
 // the diff is not empty.
-export fn rz_signal_apply(inst: RzSignalInst*, msg: string, out: RaizeBuf*, changed: bool*) -> int32 {
+export fn rz_signal_apply(inst: RzSignalInst*, msg: string, out: RzBuf*, changed: bool*) -> int32 {
   rz_arena_reset(rz_signal_arena());
-  var name_raw: string = raize_str_empty();
-  var value: string = raize_str_empty();
-  var name: string = raize_str_empty();
+  var name_raw: string = rz_str_empty();
+  var value: string = rz_str_empty();
+  var name: string = rz_str_empty();
   if (!rz_json_array_at(msg, 0, &name_raw)) { return 1; }
   if (name_raw.length < 2 || name_raw.chars[0] != 34) { return 1; }
-  name = rz_json_unescape(raize_str_sub(name_raw, 1, (int64)name_raw.length - 1), rz_signal_arena());
+  name = rz_json_unescape(rz_str_sub(name_raw, 1, (int64)name_raw.length - 1), rz_signal_arena());
   rz_json_array_at(msg, 1, &value);
   rz_signal_set_current(inst);
   var rc: int32 = inst->def->handle(inst->state, name, value);
   rz_signal_set_current(0);
   if (rc != 0) { return 2; }
   var next: RzHtml* = inst->def->view(inst->state);
-  raize_buf_add(out, "{{\"diff\":");
+  rz_buf_add(out, "{{\"diff\":");
   *changed = rz_html_diff(inst->last, next, out);
-  if (!*changed) { raize_buf_add(out, "{{}"); }
-  raize_buf_add_byte(out, 125);
+  if (!*changed) { rz_buf_add(out, "{{}"); }
+  rz_buf_add_byte(out, 125);
   rz_html_free(inst->last);
   inst->last = next;
   return 0;
@@ -245,8 +245,8 @@ struct RzSignalPub {
 fn rz_signal_deliver(hub: RzHub*, arg: rawptr) {
   var p: RzSignalPub* = (RzSignalPub*)arg;
   if (hub != 0) {
-    var payload: RaizeBuf* = raize_buf_new();
-    var frame: RaizeBuf* = raize_buf_new();
+    var payload: RzBuf* = rz_buf_new();
+    var frame: RzBuf* = rz_buf_new();
     var i: int32 = 0;
     while (i < g_rz_signal_ninst) {
       var inst: RzSignalInst* = g_rz_signal_insts[i];
@@ -255,17 +255,17 @@ fn rz_signal_deliver(hub: RzHub*, arg: rawptr) {
         var changed: bool = false;
         if (rz_signal_apply(inst, p->msg, payload, &changed) == 0 && changed) {
           frame->len = 0;
-          rz_chan_encode(frame, inst->join_ref, "", inst->topic, "diff", raize_buf_str(payload));
-          rz_hub_send(hub, inst->sock, raize_buf_str(frame));
+          rz_chan_encode(frame, inst->join_ref, "", inst->topic, "diff", rz_buf_str(payload));
+          rz_hub_send(hub, inst->sock, rz_buf_str(frame));
         }
       }
       i = i + 1;
     }
-    raize_buf_free(payload);
-    raize_buf_free(frame);
+    rz_buf_free(payload);
+    rz_buf_free(frame);
   }
-  raize_str_free(p->topic);
-  raize_str_free(p->msg);
+  rz_str_free(p->topic);
+  rz_str_free(p->msg);
   free((rawptr)p);
 }
 
@@ -276,8 +276,8 @@ export fn rz_signal_publish(topic: string, msg: string) -> bool {
   if (g_rz_signal_hub == 0) { return false; }
   var p: RzSignalPub* = (RzSignalPub*)calloc(1, sizeof(RzSignalPub));
   if (p == 0) { return false; }
-  p->topic = raize_str_dup(topic);
-  p->msg = raize_str_dup(msg);
+  p->topic = rz_str_dup(topic);
+  p->msg = rz_str_dup(msg);
   if (!rz_hub_post_call(g_rz_signal_hub, &rz_signal_deliver, (rawptr)p)) {
     rz_signal_deliver(0, (rawptr)p);
     return false;

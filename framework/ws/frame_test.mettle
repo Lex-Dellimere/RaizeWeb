@@ -10,11 +10,11 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
   var i: int64 = 0;
   var len: int64 = (int64)hex.length;
   while (i + 1 < len) {
-    var hi: int32 = raize_char_hex_value((int32)hex.chars[i]);
+    var hi: int32 = rz_char_hex_value((int32)hex.chars[i]);
     if (hi < 0) {
       i = i + 1;
     } else {
-      p[n] = (uint8)(hi * 16 + raize_char_hex_value((int32)hex.chars[i + 1]));
+      p[n] = (uint8)(hi * 16 + rz_char_hex_value((int32)hex.chars[i + 1]));
       n = n + 1;
       i = i + 2;
     }
@@ -29,7 +29,7 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
   if (rz_ws_frame_parse(&b[0], n, 1024, false, &f) != RZ_WS_FRAME_OK) { return 1; }
   if (!f.fin || f.opcode != RZ_WS_OP_TEXT || f.masked) { return 2; }
   if (f.head_len != 2 || f.payload_len != 5 || f.frame_len != 7) { return 3; }
-  if (!raize_str_eq(raize_str_view(&b[2], 5), "Hello")) { return 4; }
+  if (!rz_str_eq(rz_str_view(&b[2], 5), "Hello")) { return 4; }
   // A client must mask: the same bytes from a client are a protocol error.
   if (rz_ws_frame_parse(&b[0], n, 1024, true, &f) != RZ_WS_E_PROTOCOL) { return 5; }
   // Every proper prefix needs more bytes.
@@ -48,7 +48,7 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
   if (rz_ws_frame_parse(&b[0], n, 1024, true, &f) != RZ_WS_FRAME_OK) { return 1; }
   if (!f.masked || f.head_len != 6 || f.payload_len != 5) { return 2; }
   rz_ws_unmask(&b[6], 5, &f.mask[0], 0);
-  if (!raize_str_eq(raize_str_view(&b[6], 5), "Hello")) { return 3; }
+  if (!rz_str_eq(rz_str_view(&b[6], 5), "Hello")) { return 3; }
   if (rz_ws_frame_parse(&b[0], 5, 1024, true, &f) != RZ_WS_NEED_MORE) { return 4; }
   return 0;
 }
@@ -61,7 +61,7 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
   var phase: int64 = rz_ws_unmask(&b[0], 3, &m[0], 0);
   if (phase != 3) { return 1; }
   rz_ws_unmask(&b[3], 2, &m[0], phase);
-  if (!raize_str_eq(raize_str_view(&b[0], 5), "Hello")) { return 2; }
+  if (!rz_str_eq(rz_str_view(&b[0], 5), "Hello")) { return 2; }
   return 0;
 }
 
@@ -125,7 +125,7 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
 }
 
 @test fn t_rz_ws_close_codes() -> int32 {
-  var b: RaizeBuf* = raize_buf_new();
+  var b: RzBuf* = rz_buf_new();
   var fail: int32 = 0;
   rz_ws_close_append(b, RZ_WS_CLOSE_NORMAL, "bye");
   var f: RzWsFrame;
@@ -136,6 +136,6 @@ fn rz_wst_set(p: uint8*, hex: string) -> int64 {
   if (fail == 0 && rz_ws_close_code(b->data + 2, 1) != -1) { fail = 5; }
   if (fail == 0 && (rz_ws_close_code_ok(1005) || rz_ws_close_code_ok(1015) || rz_ws_close_code_ok(999))) { fail = 6; }
   if (fail == 0 && (!rz_ws_close_code_ok(4000) || rz_ws_close_code_ok(5000))) { fail = 7; }
-  raize_buf_free(b);
+  rz_buf_free(b);
   return fail;
 }

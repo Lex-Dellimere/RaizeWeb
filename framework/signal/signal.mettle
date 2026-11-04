@@ -46,48 +46,48 @@ const RZ_SIGNAL_JS: string = import_str "signal.js";
 
 // ---- message payload helpers (called by rzpp-generated code) --------------
 
-export fn rz_signal_arg_put_str(b: RaizeBuf*, s: string) {
-  raize_buf_add_byte(b, 34);
+export fn rz_signal_arg_put_str(b: RzBuf*, s: string) {
+  rz_buf_add_byte(b, 34);
   rz_json_escape_into(b, s);
-  raize_buf_add_byte(b, 34);
+  rz_buf_add_byte(b, 34);
 }
 
-export fn rz_signal_arg_put_bool(b: RaizeBuf*, v: bool) {
-  if (v) { raize_buf_add(b, "true"); } else { raize_buf_add(b, "false"); }
+export fn rz_signal_arg_put_bool(b: RzBuf*, v: bool) {
+  if (v) { rz_buf_add(b, "true"); } else { rz_buf_add(b, "false"); }
 }
 
 export fn rz_signal_arg_int(raw: string, out: int64*) -> bool {
   var s: string = raw;
-  if (s.length >= 2 && s.chars[0] == 34) { s = raize_str_sub(s, 1, (int64)s.length - 1); }
+  if (s.length >= 2 && s.chars[0] == 34) { s = rz_str_sub(s, 1, (int64)s.length - 1); }
   if (s.length == 0) { return false; }
   var i: int64 = 0;
   if (s.chars[0] == 45) { i = 1; }
   if (i >= (int64)s.length) { return false; }
   while (i < (int64)s.length) {
-    if (!raize_char_is_digit((int32)s.chars[i])) { return false; }
+    if (!rz_char_is_digit((int32)s.chars[i])) { return false; }
     i = i + 1;
   }
-  *out = raize_str_to_int(s);
+  *out = rz_str_to_int(s);
   return true;
 }
 
 export fn rz_signal_arg_bool(raw: string, out: bool*) -> bool {
-  if (raize_str_eq(raw, "true")) { *out = true; return true; }
-  if (raize_str_eq(raw, "false")) { *out = false; return true; }
+  if (rz_str_eq(raw, "true")) { *out = true; return true; }
+  if (rz_str_eq(raw, "false")) { *out = false; return true; }
   return false;
 }
 
 // A JSON string payload, unescaped. Valid until the next event.
 export fn rz_signal_arg_str(raw: string, out: string*) -> bool {
   if (raw.length < 2 || raw.chars[0] != 34 || raw.chars[raw.length - 1] != 34) { return false; }
-  *out = rz_json_unescape(raize_str_sub(raw, 1, (int64)raw.length - 1), rz_signal_arena());
+  *out = rz_json_unescape(rz_str_sub(raw, 1, (int64)raw.length - 1), rz_signal_arena());
   return true;
 }
 
 // ---- definition -----------------------------------------------------------
 
 fn rz_signal_join(ctx: RzChanCtx*, payload: string) -> int32 {
-  var def: RzSignalDef* = rz_signal_find(raize_str_from(ctx->topic, 7));
+  var def: RzSignalDef* = rz_signal_find(rz_str_from(ctx->topic, 7));
   if (def == 0) {
     rz_chan_reply_json(ctx, "{{\"reason\":\"no such signal\"}");
     return 1;
@@ -101,29 +101,29 @@ fn rz_signal_join(ctx: RzChanCtx*, payload: string) -> int32 {
   def->mount(inst->state);
   rz_signal_set_current(0);
   inst->last = def->view(inst->state);
-  var b: RaizeBuf* = raize_buf_new();
-  raize_buf_add(b, "{{\"rendered\":");
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "{{\"rendered\":");
   rz_html_json(inst->last, b);
-  raize_buf_add_byte(b, 125);
-  rz_chan_reply_json(ctx, raize_buf_str(b));
-  raize_buf_free(b);
+  rz_buf_add_byte(b, 125);
+  rz_chan_reply_json(ctx, rz_buf_str(b));
+  rz_buf_free(b);
   ctx->state = (rawptr)inst;
   return 0;
 }
 
 fn rz_signal_in(ctx: RzChanCtx*, event: string, payload: string) -> int32 {
   var inst: RzSignalInst* = (RzSignalInst*)ctx->state;
-  if (inst == 0 || !raize_str_eq(event, "event")) {
+  if (inst == 0 || !rz_str_eq(event, "event")) {
     rz_chan_reply_json(ctx, "{{\"reason\":\"unknown event\"}");
     return 1;
   }
-  var b: RaizeBuf* = raize_buf_new();
+  var b: RzBuf* = rz_buf_new();
   var changed: bool = false;
   var rc: int32 = rz_signal_apply(inst, payload, b, &changed);
   if (rc == 1) { rz_chan_reply_json(ctx, "{{\"reason\":\"bad event\"}"); }
   if (rc == 2) { rz_chan_reply_json(ctx, "{{\"reason\":\"bad message\"}"); }
-  if (rc == 0) { rz_chan_reply_json(ctx, raize_buf_str(b)); }
-  raize_buf_free(b);
+  if (rc == 0) { rz_chan_reply_json(ctx, rz_buf_str(b)); }
+  rz_buf_free(b);
   if (rc != 0) { return 1; }
   return 0;
 }
@@ -155,21 +155,21 @@ export fn rz_signal_page(ctx: RzContext*, name: string, head: string) -> int32 {
   if (state == 0) { return rz_ctx_text(ctx, 500, "out of memory\n"); }
   def->mount(state);
   var tree: RzHtml* = def->view(state);
-  var b: RaizeBuf* = raize_buf_new();
-  raize_buf_add(b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
-  raize_buf_add(b, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
-  raize_buf_add(b, head);
-  raize_buf_add(b, "\n</head>\n<body>\n<div id=\"rz-root\" data-signal=\"");
-  raize_buf_add(b, name);
-  raize_buf_add(b, "\">");
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+  rz_buf_add(b, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+  rz_buf_add(b, head);
+  rz_buf_add(b, "\n</head>\n<body>\n<div id=\"rz-root\" data-signal=\"");
+  rz_buf_add(b, name);
+  rz_buf_add(b, "\">");
   rz_html_render(tree, b);
-  raize_buf_add(b, "</div>\n<script src=\"/rz/signal.js\"></script>\n</body>\n</html>\n");
+  rz_buf_add(b, "</div>\n<script src=\"/rz/signal.js\"></script>\n</body>\n</html>\n");
   rz_html_free(tree);
   def->leave(state);
   free(state);
-  rz_ctx_html(ctx, 200, raize_buf_str(b));
-  raize_buf_free(b);
-  return 200;
+  var st: int32 = rz_ctx_html(ctx, 200, rz_buf_str(b));
+  rz_buf_free(b);
+  return st;
 }
 
 // GET /rz/signal.js: the browser half (embedded at build time).

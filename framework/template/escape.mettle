@@ -30,13 +30,13 @@ export fn rz_html_entity(c: int32) -> string {
     case 39: { return "&#x27;"; }
     case 47: { return "&#x2F;"; }
   }
-  return raize_str_empty();
+  return rz_str_empty();
 }
 
 // Appends `s` to `out` with the table above applied. Bytes are processed
 // individually so a multi-byte UTF-8 sequence (none of whose bytes can be an
 // ASCII metacharacter) passes through byte-for-byte.
-export fn rz_html_escape(out: RaizeBuf*, s: string) {
+export fn rz_html_escape(out: RzBuf*, s: string) {
   if (out == 0) { return; }
   var n: int64 = (int64)s.length;
   var i: int64 = 0;
@@ -44,16 +44,16 @@ export fn rz_html_escape(out: RaizeBuf*, s: string) {
     var c: int32 = (int32)s.chars[i];
     var ent: string = rz_html_entity(c);
     if (ent.length != 0) {
-      raize_buf_add(out, ent);
+      rz_buf_add(out, ent);
     } else {
-      raize_buf_add_byte(out, c);
+      rz_buf_add_byte(out, c);
     }
     i = i + 1;
   }
 }
 
 // Raw append, named so a reader sees the dangerous path at the call site.
-export fn rz_html_append_raw(out: RaizeBuf*, s: string) {
+export fn rz_html_append_raw(out: RzBuf*, s: string) {
   if (out == 0) { return; }
-  raize_buf_add(out, s);
+  rz_buf_add(out, s);
 }

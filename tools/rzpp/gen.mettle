@@ -26,66 +26,66 @@ import "src";
 
 export struct RzppNode {
   id: int32;
-  statics: RaizeStrList*;   // finished static parts (owned strings)
-  cur: RaizeBuf*;           // the static part being built
-  code: RaizeBuf*;          // statements that fill this node's slots
+  statics: RzStrList*;   // finished static parts (owned strings)
+  cur: RzBuf*;           // the static part being built
+  code: RzBuf*;          // statements that fill this node's slots
 }
 
 export fn rzpp_node_new(g: RzppGen*) -> RzppNode* {
   var n: RzppNode* = (RzppNode*)calloc(1, sizeof(RzppNode));
   n->id = g->nvar;
   g->nvar = g->nvar + 1;
-  n->statics = raize_strlist_new();
-  n->cur = raize_buf_new();
-  n->code = raize_buf_new();
+  n->statics = rz_strlist_new();
+  n->cur = rz_buf_new();
+  n->code = rz_buf_new();
   return n;
 }
 
 export fn rzpp_node_free(n: RzppNode*) {
   var i: int64 = 0;
   while (i < n->statics->len) {
-    raize_str_free(n->statics->items[i]);
+    rz_str_free(n->statics->items[i]);
     i = i + 1;
   }
-  raize_strlist_free(n->statics);
-  raize_buf_free(n->cur);
-  raize_buf_free(n->code);
+  rz_strlist_free(n->statics);
+  rz_buf_free(n->cur);
+  rz_buf_free(n->code);
   free((rawptr)n);
 }
 
 // Ends the current static part; returns the index of the slot after it.
 fn rzpp_slot(n: RzppNode*) -> int32 {
-  raize_strlist_push(n->statics, raize_str_dup(raize_buf_str(n->cur)));
+  rz_strlist_push(n->statics, rz_str_dup(rz_buf_str(n->cur)));
   n->cur->len = 0;
   return (int32)(n->statics->len - 1);
 }
 
-export fn rzpp_var(b: RaizeBuf*, id: int32) {
-  raize_buf_add(b, "__rz");
-  raize_buf_add_int(b, (int64)id);
+export fn rzpp_var(b: RzBuf*, id: int32) {
+  rz_buf_add(b, "__rz");
+  rz_buf_add_int(b, (int64)id);
 }
 
 // Closes the node: writes its const declaration and appends "&NAME[0], K, FP".
-fn rzpp_node_finish(g: RzppGen*, n: RzppNode*, out: RaizeBuf*) {
-  raize_strlist_push(n->statics, raize_str_dup(raize_buf_str(n->cur)));
+fn rzpp_node_finish(g: RzppGen*, n: RzppNode*, out: RzBuf*) {
+  rz_strlist_push(n->statics, rz_str_dup(rz_buf_str(n->cur)));
   n->cur->len = 0;
   var k: int64 = n->statics->len;
   var fp: uint64 = (uint64)14695981039346656037;
-  var name: RaizeBuf* = raize_buf_new();
-  raize_buf_add(name, "RZS_");
-  raize_buf_add(name, g->prefix);
-  raize_buf_add(name, "_");
-  raize_buf_add_int(name, (int64)g->nconst);
+  var name: RzBuf* = rz_buf_new();
+  rz_buf_add(name, "RZS_");
+  rz_buf_add(name, g->prefix);
+  rz_buf_add(name, "_");
+  rz_buf_add_int(name, (int64)g->nconst);
   g->nconst = g->nconst + 1;
-  raize_buf_add(g->consts, "const ");
-  raize_buf_add(g->consts, raize_buf_str(name));
-  raize_buf_add(g->consts, ": string[");
-  raize_buf_add_int(g->consts, k);
-  raize_buf_add(g->consts, "] = [");
+  rz_buf_add(g->consts, "const ");
+  rz_buf_add(g->consts, rz_buf_str(name));
+  rz_buf_add(g->consts, ": string[");
+  rz_buf_add_int(g->consts, k);
+  rz_buf_add(g->consts, "] = [");
   var i: int64 = 0;
   while (i < k) {
     var s: string = n->statics->items[i];
-    if (i > 0) { raize_buf_add(g->consts, ", "); }
+    if (i > 0) { rz_buf_add(g->consts, ", "); }
     rzpp_mettle_literal(g->consts, s);
     var j: int64 = 0;
     while (j < (int64)s.length) {
@@ -95,38 +95,38 @@ fn rzpp_node_finish(g: RzppGen*, n: RzppNode*, out: RaizeBuf*) {
     fp = (fp ^ (uint64)255) * (uint64)1099511628211;
     i = i + 1;
   }
-  raize_buf_add(g->consts, "];\n");
-  raize_buf_add(out, "&");
-  raize_buf_add(out, raize_buf_str(name));
-  raize_buf_add(out, "[0], ");
-  raize_buf_add_int(out, k);
-  raize_buf_add(out, ", ");
-  raize_buf_add_int(out, (int64)(fp & (uint64)0x7FFFFFFF));
-  raize_buf_free(name);
+  rz_buf_add(g->consts, "];\n");
+  rz_buf_add(out, "&");
+  rz_buf_add(out, rz_buf_str(name));
+  rz_buf_add(out, "[0], ");
+  rz_buf_add_int(out, k);
+  rz_buf_add(out, ", ");
+  rz_buf_add_int(out, (int64)(fp & (uint64)0x7FFFFFFF));
+  rz_buf_free(name);
 }
 
 // "var __rzID: RzHtml* = rz_html_node(STATICS); <slot code>"
-export fn rzpp_emit_node(g: RzppGen*, n: RzppNode*, out: RaizeBuf*) {
-  var args: RaizeBuf* = raize_buf_new();
+export fn rzpp_emit_node(g: RzppGen*, n: RzppNode*, out: RzBuf*) {
+  var args: RzBuf* = rz_buf_new();
   rzpp_node_finish(g, n, args);
-  raize_buf_add(out, "var ");
+  rz_buf_add(out, "var ");
   rzpp_var(out, n->id);
-  raize_buf_add(out, ": RzHtml* = rz_html_node(");
-  raize_buf_add(out, raize_buf_str(args));
-  raize_buf_add(out, "); ");
-  raize_buf_add(out, raize_buf_str(n->code));
-  raize_buf_free(args);
+  rz_buf_add(out, ": RzHtml* = rz_html_node(");
+  rz_buf_add(out, rz_buf_str(args));
+  rz_buf_add(out, "); ");
+  rz_buf_add(out, rz_buf_str(n->code));
+  rz_buf_free(args);
 }
 
 fn rzpp_put(n: RzppNode*, slot: int32, fn_name: string, expr: string) {
-  raize_buf_add(n->code, fn_name);
-  raize_buf_add(n->code, "(");
+  rz_buf_add(n->code, fn_name);
+  rz_buf_add(n->code, "(");
   rzpp_var(n->code, n->id);
-  raize_buf_add(n->code, ", ");
-  raize_buf_add_int(n->code, (int64)slot);
-  raize_buf_add(n->code, ", ");
-  raize_buf_add(n->code, expr);
-  raize_buf_add(n->code, "); ");
+  rz_buf_add(n->code, ", ");
+  rz_buf_add_int(n->code, (int64)slot);
+  rz_buf_add(n->code, ", ");
+  rz_buf_add(n->code, expr);
+  rz_buf_add(n->code, "); ");
 }
 
 // True for a pure access path: `a.b`, `p->f`, `xs[i].name` (bracket contents
@@ -136,7 +136,7 @@ fn rzpp_put(n: RzppNode*, slot: int32, fn_name: string, expr: string) {
 // plain variables, literals and arithmetic infer fine and keep rz_html_put.
 fn rzpp_is_path(e: string) -> bool {
   var n: int64 = (int64)e.length;
-  if (n == 0 || !raize_char_is_alpha((int32)e.chars[0]) && e.chars[0] != 95) { return false; }
+  if (n == 0 || !rz_char_is_alpha((int32)e.chars[0]) && e.chars[0] != 95) { return false; }
   var access: bool = false;
   var i: int64 = 0;
   while (i < n) {
@@ -173,84 +173,84 @@ fn rzpp_put_value(n: RzppNode*, slot: int32, expr: string) {
     rzpp_put(n, slot, "rz_html_put", expr);
     return;
   }
-  var b: RaizeBuf* = raize_buf_new();
-  raize_buf_add(b, "\"{{");
-  raize_buf_add(b, expr);
-  raize_buf_add(b, "}\"");
-  rzpp_put(n, slot, "rz_html_put_text", raize_buf_str(b));
-  raize_buf_free(b);
+  var b: RzBuf* = rz_buf_new();
+  rz_buf_add(b, "\"{{");
+  rz_buf_add(b, expr);
+  rz_buf_add(b, "}\"");
+  rzpp_put(n, slot, "rz_html_put_text", rz_buf_str(b));
+  rz_buf_free(b);
 }
 
 fn rzpp_skip_space(s: string, i: int64, end: int64) -> int64 {
   var k: int64 = i;
-  while (k < end && raize_char_is_space((int32)s.chars[k])) { k = k + 1; }
+  while (k < end && rz_char_is_space((int32)s.chars[k])) { k = k + 1; }
   return k;
 }
 
 fn rzpp_trim_end(s: string, a: int64, b: int64) -> int64 {
   var k: int64 = b;
-  while (k > a && raize_char_is_space((int32)s.chars[k - 1])) { k = k - 1; }
+  while (k > a && rz_char_is_space((int32)s.chars[k - 1])) { k = k - 1; }
   return k;
 }
 
 // {for HEADER { BODY }}: src[a..b) is the hole's inside, already trimmed.
 fn rzpp_hole_for(g: RzppGen*, n: RzppNode*, a: int64, b: int64) {
   var src: string = g->src;
-  var open: int64 = rzpp_top_brace(raize_str_sub(src, 0, b), a + 4);
+  var open: int64 = rzpp_top_brace(rz_str_sub(src, 0, b), a + 4);
   if (open < 0 || src.chars[b - 1] != 125) {
     rzpp_fail(g, a, "a {{for} hole is `{{for x in xs {{ markup }}`");
     return;
   }
-  var header: string = rzpp_trim(raize_str_sub(src, a + 4, open));
+  var header: string = rzpp_trim(rz_str_sub(src, a + 4, open));
   var slot: int32 = rzpp_slot(n);
   var list_id: int32 = g->nvar;
   g->nvar = g->nvar + 1;
   var body: RzppNode* = rzpp_node_new(g);
   rzpp_parse(g, body, open + 1, b - 1);
-  var args: RaizeBuf* = raize_buf_new();
+  var args: RzBuf* = rz_buf_new();
   rzpp_node_finish(g, body, args);
-  raize_buf_add(n->code, "var ");
+  rz_buf_add(n->code, "var ");
   rzpp_var(n->code, list_id);
-  raize_buf_add(n->code, ": RzHtmlList* = rz_html_list(");
+  rz_buf_add(n->code, ": RzHtmlList* = rz_html_list(");
   rzpp_var(n->code, n->id);
-  raize_buf_add(n->code, ", ");
-  raize_buf_add_int(n->code, (int64)slot);
-  raize_buf_add(n->code, ", ");
-  raize_buf_add(n->code, raize_buf_str(args));
-  raize_buf_add(n->code, "); for ");
-  raize_buf_add(n->code, header);
-  raize_buf_add(n->code, " {{ var ");
+  rz_buf_add(n->code, ", ");
+  rz_buf_add_int(n->code, (int64)slot);
+  rz_buf_add(n->code, ", ");
+  rz_buf_add(n->code, rz_buf_str(args));
+  rz_buf_add(n->code, "); for ");
+  rz_buf_add(n->code, header);
+  rz_buf_add(n->code, " {{ var ");
   rzpp_var(n->code, body->id);
-  raize_buf_add(n->code, ": RzHtml* = rz_html_item(");
+  rz_buf_add(n->code, ": RzHtml* = rz_html_item(");
   rzpp_var(n->code, list_id);
-  raize_buf_add(n->code, "); ");
-  raize_buf_add(n->code, raize_buf_str(body->code));
-  raize_buf_add(n->code, "} ");
-  raize_buf_free(args);
+  rz_buf_add(n->code, "); ");
+  rz_buf_add(n->code, rz_buf_str(body->code));
+  rz_buf_add(n->code, "} ");
+  rz_buf_free(args);
   rzpp_node_free(body);
 }
 
 // {if COND { A } else if COND2 { B } else { C }}: src[a..b) trimmed.
 fn rzpp_hole_if(g: RzppGen*, n: RzppNode*, a: int64, b: int64) {
   var src: string = g->src;
-  var scope: string = raize_str_sub(src, 0, b);
+  var scope: string = rz_str_sub(src, 0, b);
   var slot: int32 = rzpp_slot(n);
   var pos: int64 = a;
   var first: bool = true;
   while (!rzpp_failed(g)) {
     pos = rzpp_skip_space(src, pos, b);
     if (pos >= b) { return; }
-    var at: string = raize_str_sub(src, pos, b);
+    var at: string = rz_str_sub(src, pos, b);
     var has_cond: bool = false;
-    if (first && raize_str_starts(at, "if ")) {
+    if (first && rz_str_starts(at, "if ")) {
       pos = pos + 3;
       has_cond = true;
-    } else if (!first && raize_str_starts(at, "else if ")) {
-      raize_buf_add(n->code, "else ");
+    } else if (!first && rz_str_starts(at, "else if ")) {
+      rz_buf_add(n->code, "else ");
       pos = pos + 8;
       has_cond = true;
-    } else if (!first && raize_str_starts(at, "else")) {
-      raize_buf_add(n->code, "else ");
+    } else if (!first && rz_str_starts(at, "else")) {
+      rz_buf_add(n->code, "else ");
       pos = pos + 4;
     } else {
       rzpp_fail(g, pos, "expected `else` or the end of the {{if} hole");
@@ -261,21 +261,21 @@ fn rzpp_hole_if(g: RzppGen*, n: RzppNode*, a: int64, b: int64) {
     var close: int64 = rzpp_match_brace(scope, open);
     if (close < 0) { rzpp_fail(g, open, "unclosed `{{` in an {{if} hole"); return; }
     if (has_cond) {
-      raize_buf_add(n->code, "if (");
-      raize_buf_add(n->code, rzpp_trim(raize_str_sub(src, pos, open)));
-      raize_buf_add(n->code, ") ");
+      rz_buf_add(n->code, "if (");
+      rz_buf_add(n->code, rzpp_trim(rz_str_sub(src, pos, open)));
+      rz_buf_add(n->code, ") ");
     }
     var child: RzppNode* = rzpp_node_new(g);
     rzpp_parse(g, child, open + 1, close);
-    raize_buf_add(n->code, "{{ ");
+    rz_buf_add(n->code, "{{ ");
     rzpp_emit_node(g, child, n->code);
-    raize_buf_add(n->code, "rz_html_put_node(");
+    rz_buf_add(n->code, "rz_html_put_node(");
     rzpp_var(n->code, n->id);
-    raize_buf_add(n->code, ", ");
-    raize_buf_add_int(n->code, (int64)slot);
-    raize_buf_add(n->code, ", ");
+    rz_buf_add(n->code, ", ");
+    rz_buf_add_int(n->code, (int64)slot);
+    rz_buf_add(n->code, ", ");
     rzpp_var(n->code, child->id);
-    raize_buf_add(n->code, "); } ");
+    rz_buf_add(n->code, "); } ");
     rzpp_node_free(child);
     pos = close + 1;
     first = false;
@@ -289,16 +289,16 @@ fn rzpp_hole(g: RzppGen*, n: RzppNode*, open: int64, end: int64) -> int64 {
   if (close < 0 || close >= end) { rzpp_fail(g, open, "unclosed `{{`"); return end; }
   var a: int64 = rzpp_skip_space(src, open + 1, close);
   var b: int64 = rzpp_trim_end(src, a, close);
-  var inner: string = raize_str_sub(src, a, b);
+  var inner: string = rz_str_sub(src, a, b);
   if (inner.length == 0) { rzpp_fail(g, open, "empty `{{}` hole"); return close + 1; }
-  if (raize_str_starts(inner, "for ")) {
+  if (rz_str_starts(inner, "for ")) {
     rzpp_hole_for(g, n, a, b);
-  } else if (raize_str_starts(inner, "if ")) {
+  } else if (rz_str_starts(inner, "if ")) {
     rzpp_hole_if(g, n, a, b);
   } else {
     var slot: int32 = rzpp_slot(n);
-    if (raize_str_starts(inner, "raw(") && raize_str_ends(inner, ")")) {
-      rzpp_put(n, slot, "rz_html_put_raw", raize_str_sub(inner, 4, (int64)inner.length - 1));
+    if (rz_str_starts(inner, "raw(") && rz_str_ends(inner, ")")) {
+      rzpp_put(n, slot, "rz_html_put_raw", rz_str_sub(inner, 4, (int64)inner.length - 1));
     } else {
       rzpp_put_value(n, slot, inner);
     }
@@ -310,30 +310,30 @@ fn rzpp_hole(g: RzppGen*, n: RzppNode*, open: int64, end: int64) -> int64 {
 fn rzpp_event(g: RzppGen*, n: RzppNode*, event: string, at: int64, expr: string) {
   var head: int64 = 0;
   while (head < (int64)expr.length && rzpp_ident_char((int32)expr.chars[head])) { head = head + 1; }
-  var variant: string = raize_str_sub(expr, 0, head);
+  var variant: string = rz_str_sub(expr, 0, head);
   var owner: string = rzpp_enum_of(g, variant);
   if (owner.length == 0) {
     rzpp_fail(g, at, "`{variant}` is not a variant of a message enum (an enum whose name ends in Msg)");
     return;
   }
-  raize_buf_add(n->cur, "rz-");
-  raize_buf_add(n->cur, event);
-  raize_buf_add(n->cur, "=\"");
+  rz_buf_add(n->cur, "rz-");
+  rz_buf_add(n->cur, event);
+  rz_buf_add(n->cur, "=\"");
   if (head == (int64)expr.length) {
     // A bare variant: the message is known now. A payload, if the variant
     // has one, comes from the element (an input's value) in the browser.
-    raize_buf_add(n->cur, "[&quot;");
-    raize_buf_add(n->cur, variant);
-    raize_buf_add(n->cur, "&quot;]\"");
+    rz_buf_add(n->cur, "[&quot;");
+    rz_buf_add(n->cur, variant);
+    rz_buf_add(n->cur, "&quot;]\"");
     return;
   }
   var slot: int32 = rzpp_slot(n);
-  var fn_name: RaizeBuf* = raize_buf_new();
-  raize_buf_add(fn_name, owner);
-  raize_buf_add(fn_name, "__put");
-  rzpp_put(n, slot, raize_buf_str(fn_name), expr);
-  raize_buf_free(fn_name);
-  raize_buf_add(n->cur, "\"");
+  var fn_name: RzBuf* = rz_buf_new();
+  rz_buf_add(fn_name, owner);
+  rz_buf_add(fn_name, "__put");
+  rzpp_put(n, slot, rz_buf_str(fn_name), expr);
+  rz_buf_free(fn_name);
+  rz_buf_add(n->cur, "\"");
 }
 
 fn rzpp_attr_char(c: int32) -> bool {
@@ -349,54 +349,54 @@ fn rzpp_tag(g: RzppGen*, n: RzppNode*, at: int64, end: int64) -> int64 {
   var i: int64 = at + 1;
   var name_start: int64 = i;
   while (i < end && (rzpp_ident_char((int32)src.chars[i]) || src.chars[i] == 45)) { i = i + 1; }
-  var name: string = raize_str_sub(src, name_start, i);
-  raize_buf_add(n->cur, raize_str_sub(src, at, i));
+  var name: string = rz_str_sub(src, name_start, i);
+  rz_buf_add(n->cur, rz_str_sub(src, at, i));
   while (i < end && !rzpp_failed(g)) {
     var c: int32 = (int32)src.chars[i];
-    if (raize_char_is_space(c)) { raize_buf_add_byte(n->cur, c); i = i + 1; continue; }
-    if (c == 62) { raize_buf_add_byte(n->cur, c); i = i + 1; break; }
-    if (c == 47 && i + 1 < end && src.chars[i + 1] == 62) { raize_buf_add(n->cur, "/>"); i = i + 2; break; }
+    if (rz_char_is_space(c)) { rz_buf_add_byte(n->cur, c); i = i + 1; continue; }
+    if (c == 62) { rz_buf_add_byte(n->cur, c); i = i + 1; break; }
+    if (c == 47 && i + 1 < end && src.chars[i + 1] == 62) { rz_buf_add(n->cur, "/>"); i = i + 2; break; }
     var an: int64 = i;
     while (i < end && rzpp_attr_char((int32)src.chars[i])) { i = i + 1; }
     if (i == an) { rzpp_fail(g, i, "unexpected character in a tag"); return end; }
-    var aname: string = raize_str_sub(src, an, i);
+    var aname: string = rz_str_sub(src, an, i);
     if (i + 1 < end && src.chars[i] == 61 && src.chars[i + 1] == 123) {
       var close: int64 = rzpp_match_brace(src, i + 1);
       if (close < 0 || close >= end) { rzpp_fail(g, i, "unclosed `{{` in an attribute"); return end; }
-      var expr: string = rzpp_trim(raize_str_sub(src, i + 2, close));
-      if (raize_str_starts(aname, "on:")) {
-        rzpp_event(g, n, raize_str_from(aname, 3), an, expr);
+      var expr: string = rzpp_trim(rz_str_sub(src, i + 2, close));
+      if (rz_str_starts(aname, "on:")) {
+        rzpp_event(g, n, rz_str_from(aname, 3), an, expr);
       } else {
-        raize_buf_add(n->cur, aname);
-        raize_buf_add(n->cur, "=\"");
+        rz_buf_add(n->cur, aname);
+        rz_buf_add(n->cur, "=\"");
         var slot: int32 = rzpp_slot(n);
         rzpp_put_value(n, slot, expr);
-        raize_buf_add(n->cur, "\"");
+        rz_buf_add(n->cur, "\"");
       }
       i = close + 1;
       continue;
     }
-    raize_buf_add(n->cur, aname);
+    rz_buf_add(n->cur, aname);
     if (i < end && src.chars[i] == 61) {
-      raize_buf_add_byte(n->cur, 61);
+      rz_buf_add_byte(n->cur, 61);
       i = i + 1;
       if (i < end && (src.chars[i] == 34 || src.chars[i] == 39)) {
-        var q: int64 = raize_str_find_byte_from(src, (int32)src.chars[i], i + 1);
+        var q: int64 = rz_str_find_byte_from(src, (int32)src.chars[i], i + 1);
         if (q < 0 || q >= end) { rzpp_fail(g, i, "unclosed attribute value"); return end; }
-        raize_buf_add(n->cur, raize_str_sub(src, i, q + 1));
+        rz_buf_add(n->cur, rz_str_sub(src, i, q + 1));
         i = q + 1;
       }
     }
   }
-  if (raize_str_eq_ci(name, "script") || raize_str_eq_ci(name, "style")) {
+  if (rz_str_eq_ci(name, "script") || rz_str_eq_ci(name, "style")) {
     // Raw text: braces here are JS or CSS, not holes.
-    var close_tag: RaizeBuf* = raize_buf_new();
-    raize_buf_add(close_tag, "</");
-    raize_buf_add(close_tag, name);
-    var ct: int64 = raize_str_find_from(src, raize_buf_str(close_tag), i);
-    raize_buf_free(close_tag);
+    var close_tag: RzBuf* = rz_buf_new();
+    rz_buf_add(close_tag, "</");
+    rz_buf_add(close_tag, name);
+    var ct: int64 = rz_str_find_from(src, rz_buf_str(close_tag), i);
+    rz_buf_free(close_tag);
     if (ct < 0 || ct > end) { rzpp_fail(g, at, "<{name}> is never closed"); return end; }
-    raize_buf_add(n->cur, raize_str_sub(src, i, ct));
+    rz_buf_add(n->cur, rz_str_sub(src, i, ct));
     i = ct;
   }
   return i;
@@ -408,9 +408,9 @@ fn rzpp_component(g: RzppGen*, n: RzppNode*, at: int64, end: int64) -> int64 {
   var i: int64 = at + 2;
   var name_start: int64 = i;
   while (i < end && rzpp_ident_char((int32)src.chars[i])) { i = i + 1; }
-  var name: string = raize_str_sub(src, name_start, i);
+  var name: string = rz_str_sub(src, name_start, i);
   if (name.length == 0) { rzpp_fail(g, at, "a component tag is `<.name ...>`"); return end; }
-  var params: RaizeStrList* = rzpp_fn_params(src, name);
+  var params: RzStrList* = rzpp_fn_params(src, name);
   if (params == 0) {
     rzpp_fail(g, at, "component <.{name}> needs `fn {name}(...)` in the same file");
     return end;
@@ -423,22 +423,22 @@ fn rzpp_component(g: RzppGen*, n: RzppNode*, at: int64, end: int64) -> int64 {
     if (i < end && src.chars[i] == 62) { i = i + 1; break; }
     var an: int64 = i;
     while (i < end && rzpp_ident_char((int32)src.chars[i])) { i = i + 1; }
-    var aname: string = raize_str_sub(src, an, i);
+    var aname: string = rz_str_sub(src, an, i);
     if (aname.length == 0 || i + 1 >= end || src.chars[i] != 61) {
       rzpp_fail(g, an, "component attributes are `name=\"text\"` or `name={{expr}`");
       return end;
     }
     i = i + 1;
-    var value: string = raize_str_empty();
+    var value: string = rz_str_empty();
     if (src.chars[i] == 34) {
-      var q: int64 = raize_str_find_byte_from(src, 34, i + 1);
+      var q: int64 = rz_str_find_byte_from(src, 34, i + 1);
       if (q < 0 || q >= end) { rzpp_fail(g, i, "unclosed attribute string"); return end; }
-      value = raize_str_sub(src, i, q + 1);
+      value = rz_str_sub(src, i, q + 1);
       i = q + 1;
     } else if (src.chars[i] == 123) {
       var c: int64 = rzpp_match_brace(src, i);
       if (c < 0 || c >= end) { rzpp_fail(g, i, "unclosed `{{` in an attribute"); return end; }
-      value = rzpp_trim(raize_str_sub(src, i + 1, c));
+      value = rzpp_trim(rz_str_sub(src, i + 1, c));
       i = c + 1;
     } else {
       rzpp_fail(g, i, "component attribute values are \"text\" or {{expr}");
@@ -449,43 +449,43 @@ fn rzpp_component(g: RzppGen*, n: RzppNode*, at: int64, end: int64) -> int64 {
     args[p] = value;
   }
   if (!self_closing && !rzpp_failed(g)) {
-    var close_tag: RaizeBuf* = raize_buf_new();
-    raize_buf_add(close_tag, "</.");
-    raize_buf_add(close_tag, name);
-    raize_buf_add(close_tag, ">");
-    var ct: int64 = raize_str_find_from(src, raize_buf_str(close_tag), i);
+    var close_tag: RzBuf* = rz_buf_new();
+    rz_buf_add(close_tag, "</.");
+    rz_buf_add(close_tag, name);
+    rz_buf_add(close_tag, ">");
+    var ct: int64 = rz_str_find_from(src, rz_buf_str(close_tag), i);
     var ctlen: int64 = close_tag->len;
-    raize_buf_free(close_tag);
+    rz_buf_free(close_tag);
     if (ct < 0 || ct > end) { rzpp_fail(g, at, "<.{name}> is never closed"); return end; }
     var p: int64 = rzpp_list_index(params, "inner");
     if (p < 0) { rzpp_fail(g, at, "<.{name}> has children but {name}() has no `inner: RzHtml*`"); return end; }
     var child: RzppNode* = rzpp_node_new(g);
     rzpp_parse(g, child, i, ct);
     rzpp_emit_node(g, child, n->code);
-    var v: RaizeBuf* = raize_buf_new();
+    var v: RzBuf* = rz_buf_new();
     rzpp_var(v, child->id);
-    args[p] = raize_buf_take(v);
+    args[p] = rz_buf_take(v);
     rzpp_node_free(child);
     i = ct + ctlen;
   }
-  var call: RaizeBuf* = raize_buf_new();
-  raize_buf_add(call, name);
-  raize_buf_add(call, "(");
+  var call: RzBuf* = rz_buf_new();
+  rz_buf_add(call, name);
+  rz_buf_add(call, "(");
   var k: int64 = 0;
   while (k < params->len && !rzpp_failed(g)) {
     if (args[k].length == 0) {
       rzpp_fail(g, at, "<.{name}> is missing `{params->items[k]}`");
     }
-    if (k > 0) { raize_buf_add(call, ", "); }
-    raize_buf_add(call, args[k]);
+    if (k > 0) { rz_buf_add(call, ", "); }
+    rz_buf_add(call, args[k]);
     k = k + 1;
   }
-  raize_buf_add(call, ")");
+  rz_buf_add(call, ")");
   var slot: int32 = rzpp_slot(n);
-  rzpp_put(n, slot, "rz_html_put", raize_buf_str(call));
-  raize_buf_free(call);
+  rzpp_put(n, slot, "rz_html_put", rz_buf_str(call));
+  rz_buf_free(call);
   free((rawptr)args);
-  raize_strlist_free(params);
+  rz_strlist_free(params);
   return i;
 }
 
@@ -497,7 +497,7 @@ export fn rzpp_parse(g: RzppGen*, n: RzppNode*, a: int64, b: int64) {
     var c: int32 = (int32)src.chars[i];
     if (c == 123) {
       if (i + 1 < b && src.chars[i + 1] == 123) {
-        raize_buf_add_byte(n->cur, 123);
+        rz_buf_add_byte(n->cur, 123);
         i = i + 2;
         continue;
       }
@@ -507,16 +507,16 @@ export fn rzpp_parse(g: RzppGen*, n: RzppNode*, a: int64, b: int64) {
     if (c == 60 && i + 1 < b) {
       var d: int32 = (int32)src.chars[i + 1];
       if (d == 46) { i = rzpp_component(g, n, i, b); continue; }
-      if (raize_str_starts(raize_str_sub(src, i, b), "<!--")) {
-        var e: int64 = raize_str_find_from(src, "-->", i);
+      if (rz_str_starts(rz_str_sub(src, i, b), "<!--")) {
+        var e: int64 = rz_str_find_from(src, "-->", i);
         if (e < 0 || e >= b) { rzpp_fail(g, i, "unclosed <!-- comment"); return; }
-        raize_buf_add(n->cur, raize_str_sub(src, i, e + 3));
+        rz_buf_add(n->cur, rz_str_sub(src, i, e + 3));
         i = e + 3;
         continue;
       }
-      if (raize_char_is_alpha(d)) { i = rzpp_tag(g, n, i, b); continue; }
+      if (rz_char_is_alpha(d)) { i = rzpp_tag(g, n, i, b); continue; }
     }
-    raize_buf_add_byte(n->cur, c);
+    rz_buf_add_byte(n->cur, c);
     i = i + 1;
   }
 }

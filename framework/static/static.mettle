@@ -64,7 +64,7 @@ fn rz_static_copy_cstr(s: string, buf: uint8*, cap: int64) -> bool {
 }
 
 // Owned copy that reports failure with a null view, so a later
-// raize_str_free never sees a string literal. (raize_str_dup returns an empty
+// rz_str_free never sees a string literal. (rz_str_dup returns an empty
 // literal on malloc failure, which is not safe to free.)
 fn rz_static_dup(s: string) -> string {
   var n: int64 = (int64)s.length;
@@ -81,7 +81,7 @@ fn rz_static_dup(s: string) -> string {
     i = i + 1;
   }
   p[n] = 0;
-  return raize_str_view(p, n);
+  return rz_str_view(p, n);
 }
 
 fn rz_static_cstr_len(p: cstring, cap: int64) -> int64 {
@@ -110,13 +110,13 @@ export fn rz_static_new(root: string, prefix: string, max_age: int32) -> RzStati
   var clen: int64 = rz_static_cstr_len(rp, RZ_STATIC_MAX_PATH - 1);
   if (clen <= 0) { return 0; }
   while (clen > 1 && resolved[clen - 1] == 47) { clen = clen - 1; }
-  var canon: string = raize_str_view(&resolved[0], clen);
+  var canon: string = rz_str_view(&resolved[0], clen);
   if (mettle_dir_exists((cstring)&resolved[0]) == 0) { return 0; }
 
   var st: RzStatic* = (RzStatic*)calloc(1, sizeof(RzStatic));
   if (st == 0) { return 0; }
   st->root = rz_static_dup(canon);
-  st->prefix = rz_static_dup(raize_str_sub(prefix, 0, pn));
+  st->prefix = rz_static_dup(rz_str_sub(prefix, 0, pn));
   if (st->root.chars == 0 || st->prefix.chars == 0) {
     if (st->root.chars != 0) { free(st->root.chars); }
     if (st->prefix.chars != 0) { free(st->prefix.chars); }
@@ -130,8 +130,8 @@ export fn rz_static_new(root: string, prefix: string, max_age: int32) -> RzStati
 
 export fn rz_static_free(st: RzStatic*) {
   if (st == 0) { return; }
-  raize_str_free(st->root);
-  raize_str_free(st->prefix);
+  rz_str_free(st->root);
+  rz_str_free(st->prefix);
   free((rawptr)st);
 }
 
@@ -143,38 +143,38 @@ export fn rz_static_cache_control(max_age: int32, buf: uint8*, cap: int64) -> st
   var lit: string = "public, max-age=";
   var ln: int64 = (int64)lit.length;
   var tmp: uint8[24];
-  var num: string = raize_int_buf((int64)max_age, &tmp[0], 24);
+  var num: string = rz_int_buf((int64)max_age, &tmp[0], 24);
   var total: int64 = ln + (int64)num.length;
-  if (buf == 0 || total + 1 > cap || num.length == 0) { return raize_str_empty(); }
+  if (buf == 0 || total + 1 > cap || num.length == 0) { return rz_str_empty(); }
   var o: int64 = 0;
   var i: int64 = 0;
   while (i < ln) { buf[o] = lit.chars[i]; o = o + 1; i = i + 1; }
   i = 0;
   while (i < (int64)num.length) { buf[o] = num.chars[i]; o = o + 1; i = i + 1; }
   buf[o] = 0;
-  return raize_str_view(buf, o);
+  return rz_str_view(buf, o);
 }
 
 // `"<size-hex>-<hash-hex>"` into caller storage. Deterministic: same bytes and
 // size give the same tag in every process, which is what a validator needs.
 export fn rz_static_etag(size: int64, hash: uint64, buf: uint8*, cap: int64) -> string {
-  if (buf == 0 || cap < 16) { return raize_str_empty(); }
+  if (buf == 0 || cap < 16) { return rz_str_empty(); }
   var tmp: uint8[24];
   var o: int64 = 0;
   buf[o] = 34;
   o = o + 1;
-  var s1: string = raize_hex_buf((uint64)size, &tmp[0], 24);
+  var s1: string = rz_hex_buf((uint64)size, &tmp[0], 24);
   var i: int64 = 0;
   while (i < (int64)s1.length) { buf[o] = s1.chars[i]; o = o + 1; i = i + 1; }
   buf[o] = 45;
   o = o + 1;
-  var s2: string = raize_hex_buf(hash, &tmp[0], 24);
+  var s2: string = rz_hex_buf(hash, &tmp[0], 24);
   i = 0;
   while (i < (int64)s2.length) { buf[o] = s2.chars[i]; o = o + 1; i = i + 1; }
   buf[o] = 34;
   o = o + 1;
   buf[o] = 0;
-  return raize_str_view(buf, o);
+  return rz_str_view(buf, o);
 }
 
 // If-None-Match is a comma list. Comparison is weak (RFC 9110 §13.1.2): an
@@ -201,12 +201,12 @@ export fn rz_static_etag_match(header: string, etag: string) -> bool {
         if (y == 32 || y == 9) { b = b - 1; } else { break; }
       }
       if (b > a) {
-        var piece: string = raize_str_sub(header, a, b);
-        if (raize_str_eq(piece, "*")) { return true; }
+        var piece: string = rz_str_sub(header, a, b);
+        if (rz_str_eq(piece, "*")) { return true; }
         if (piece.length >= 2 && piece.chars[0] == 87 && piece.chars[1] == 47) {
-          piece = raize_str_from(piece, 2);
+          piece = rz_str_from(piece, 2);
         }
-        if (raize_str_eq(piece, etag)) { return true; }
+        if (rz_str_eq(piece, etag)) { return true; }
       }
       start = i + 1;
     }
@@ -238,7 +238,7 @@ export fn rz_static_serve(st: RzStatic*, ctx: RzContext*, rel: string) -> int32 
   if (st == 0 || ctx == 0 || ctx->req == 0 || ctx->resp == 0) { return 500; }
   if (ctx->resp->body == 0) { return 500; }
   var verb: string = ctx->req->verb;
-  if (!raize_str_eq(verb, "GET") && !raize_str_eq(verb, "HEAD")) {
+  if (!rz_str_eq(verb, "GET") && !rz_str_eq(verb, "HEAD")) {
     return rz_static_405(ctx);
   }
   if (!rz_static_rel_ok(rel)) { return rz_static_fail(ctx, 404, "not found\n"); }
@@ -252,7 +252,7 @@ export fn rz_static_serve(st: RzStatic*, ctx: RzContext*, rel: string) -> int32 
   var rp: cstring = realpath((cstring)&full[0], (cstring)&resolved[0]);
   if (rp == 0) { return rz_static_fail(ctx, 404, "not found\n"); }
   var rlen: int64 = rz_static_cstr_len(rp, RZ_STATIC_MAX_PATH - 1);
-  if (!rz_static_within(st->root, raize_str_view(&resolved[0], rlen))) {
+  if (!rz_static_within(st->root, rz_str_view(&resolved[0], rlen))) {
     return rz_static_fail(ctx, 404, "not found\n");
   }
   if (mettle_dir_exists((cstring)&resolved[0]) != 0) {
@@ -281,7 +281,7 @@ export fn rz_static_serve(st: RzStatic*, ctx: RzContext*, rel: string) -> int32 
       hash = hash * (uint32)16777619;
       k = k + 1;
     }
-    raize_buf_add_bytes(resp->body, &chunk[0], got);
+    rz_buf_add_bytes(resp->body, &chunk[0], got);
   }
   fclose(fp);
 
@@ -316,7 +316,7 @@ export fn rz_static_handle(st: RzStatic*, ctx: RzContext*) -> int32 {
   var off: int64 = 0;
   if (pn > 0) {
     if (plen < pn) { return rz_static_fail(ctx, 404, "not found\n"); }
-    if (!raize_str_eq(raize_str_sub(path, 0, pn), st->prefix)) {
+    if (!rz_str_eq(rz_str_sub(path, 0, pn), st->prefix)) {
       return rz_static_fail(ctx, 404, "not found\n");
     }
     off = pn;
@@ -331,5 +331,5 @@ export fn rz_static_handle(st: RzStatic*, ctx: RzContext*) -> int32 {
     if (off < plen && path.chars[off] == 47) { off = off + 1; }
   }
   if (off >= plen) { return rz_static_fail(ctx, 404, "not found\n"); }
-  return rz_static_serve(st, ctx, raize_str_from(path, off));
+  return rz_static_serve(st, ctx, rz_str_from(path, off));
 }

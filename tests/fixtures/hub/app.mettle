@@ -30,8 +30,8 @@ fn echo_open(hub: RzHub*, sock: int64, arg: rawptr) -> rawptr {
 }
 
 fn echo_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payload: string) -> int32 {
-  if (op == RZ_WS_OP_TEXT && raize_str_starts(payload, "broadcast:")) {
-    rz_hub_broadcast(hub, raize_str_from(payload, 10));
+  if (op == RZ_WS_OP_TEXT && rz_str_starts(payload, "broadcast:")) {
+    rz_hub_broadcast(hub, rz_str_from(payload, 10));
     return 0;
   }
   return rz_hub_send_op(hub, sock, op, payload);
@@ -58,18 +58,18 @@ fn ticker(arg: cstring) -> uint32 {
     thread_sleep_ms(100);
     n = n + 1;
     var tb: uint8[32];
-    var t: RaizeBuf* = raize_buf_new();
-    raize_buf_add(t, "tick ");
-    raize_buf_add(t, raize_int_buf(n, &tb[0], 32));
-    rz_hub_post_broadcast(g_hub, raize_buf_str(t));
-    raize_buf_free(t);
+    var t: RzBuf* = rz_buf_new();
+    rz_buf_add(t, "tick ");
+    rz_buf_add(t, rz_int_buf(n, &tb[0], 32));
+    rz_hub_post_broadcast(g_hub, rz_buf_str(t));
+    rz_buf_free(t);
   }
   return 0;
 }
 
 fn main(argc: int32, argv: cstring*) -> int32 {
   var port: int32 = 8097;
-  if (argc > 1) { port = (int32)raize_str_to_int(raize_str_from_c(argv[1])); }
+  if (argc > 1) { port = (int32)rz_str_to_int(rz_str_from_c(argv[1])); }
 
   var hopts: RzHubOpts = rz_hub_opts_default();
   hopts.max_message = 65536;
@@ -83,7 +83,7 @@ fn main(argc: int32, argv: cstring*) -> int32 {
   g_router = rz_router_new();
   var a0: int32 = rz_router_add(g_router, "GET", "/", &h_index);
   var a1: int32 = rz_router_add(g_router, "GET", "/socket", &h_socket);
-  if (g_router == 0 || a0 != RZ_E_OK || a1 != RZ_E_OK) { println("hub_app: routes failed"); return 2; }
+  if (g_router == 0 || a0 != RZ_OK || a1 != RZ_OK) { println("hub_app: routes failed"); return 2; }
 
   var opts: RzServerOpts = rz_server_opts_default();
   opts.port = port;

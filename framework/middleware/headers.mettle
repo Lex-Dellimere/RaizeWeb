@@ -62,7 +62,7 @@ export fn rz_hdr_set(resp: RzResponse*, name: string, value: string) -> int32 {
 
 // Case-insensitive read; empty when absent.
 export fn rz_hdr_get(resp: RzResponse*, name: string) -> string {
-  if (resp == 0) { return raize_str_empty(); }
+  if (resp == 0) { return rz_str_empty(); }
   return rz_resp_header_get(resp, name);
 }
 
@@ -104,7 +104,7 @@ export fn rz_hdr_set_default(resp: RzResponse*, name: string, value: string) -> 
 // ---------------------------------------------------------------------------
 
 export fn rz_hdr_in_get(req: RzRequest*, name: string) -> string {
-  if (req == 0) { return raize_str_empty(); }
+  if (req == 0) { return rz_str_empty(); }
   return rz_header_get(req->headers, req->header_count, name);
 }
 
@@ -159,20 +159,20 @@ export fn rz_hdr_in_token(req: RzRequest*, name: string, token: string) -> bool 
   r->arena = arena;
 
   if (rz_hdr_set(r, "X-Test", "one") != RZ_HDR_OK) { return 3; }
-  if (!raize_str_eq(rz_hdr_get(r, "x-test"), "one")) { return 4; }
-  if (!raize_str_eq(rz_hdr_get(r, "X-TEST"), "one")) { return 5; }
+  if (!rz_str_eq(rz_hdr_get(r, "x-test"), "one")) { return 4; }
+  if (!rz_str_eq(rz_hdr_get(r, "X-TEST"), "one")) { return 5; }
   if (rz_hdr_get(r, "x-missing").length != 0) { return 6; }
   // set *replaces* (keeps one entry), it does not append
   if (rz_hdr_set(r, "x-tEst", "two") != RZ_HDR_OK) { return 7; }
   if (r->header_count != 1) { return 8; }
-  if (!raize_str_eq(rz_hdr_get(r, "X-Test"), "two")) { return 9; }
+  if (!rz_str_eq(rz_hdr_get(r, "X-Test"), "two")) { return 9; }
   // a value built in a stack buffer is copied into the arena (no dangling view)
   var scratch: uint8[4];
   scratch[0] = 65;
-  var view: string = raize_str_view(&scratch[0], 1);
+  var view: string = rz_str_view(&scratch[0], 1);
   if (rz_hdr_set(r, "X-Copy", view) != RZ_HDR_OK) { return 10; }
   scratch[0] = 66;
-  if (!raize_str_eq(rz_hdr_get(r, "X-Copy"), "A")) { return 11; }
+  if (!rz_str_eq(rz_hdr_get(r, "X-Copy"), "A")) { return 11; }
   return 0;
 }
 
@@ -189,7 +189,7 @@ export fn rz_hdr_in_token(req: RzRequest*, name: string, token: string) -> bool 
   if (r->header_count != 2) { return 5; }
   if (rz_header_count_named(&r->headers[0], r->header_count, "SET-COOKIE") != 2) { return 6; }
   // append tolerates an existing name (that is the point); set-default does not
-  if (!raize_str_eq(rz_hdr_get(r, "Set-Cookie"), "a=1; Path=/")) { return 7; }
+  if (!rz_str_eq(rz_hdr_get(r, "Set-Cookie"), "a=1; Path=/")) { return 7; }
   return 0;
 }
 
@@ -244,10 +244,10 @@ export fn rz_hdr_in_token(req: RzRequest*, name: string, token: string) -> bool 
   defer rz_response_free(r);
   r->arena = arena;
   if (rz_hdr_set_default(r, "Cache-Control", "no-store") != RZ_HDR_OK) { return 3; }
-  if (!raize_str_eq(rz_hdr_get(r, "cache-control"), "no-store")) { return 4; }
+  if (!rz_str_eq(rz_hdr_get(r, "cache-control"), "no-store")) { return 4; }
   // a second call is a no-op: the handler's value wins
   if (rz_hdr_set_default(r, "cache-control", "max-age=60") != RZ_HDR_OK) { return 5; }
-  if (!raize_str_eq(rz_hdr_get(r, "Cache-Control"), "no-store")) { return 6; }
+  if (!rz_str_eq(rz_hdr_get(r, "Cache-Control"), "no-store")) { return 6; }
   if (r->header_count != 1) { return 7; }
   return 0;
 }
@@ -265,7 +265,7 @@ export fn rz_hdr_in_token(req: RzRequest*, name: string, token: string) -> bool 
   req.headers[2].name = "x-twice";
   req.headers[2].value = "2";
   req.header_count = 3;
-  if (!raize_str_eq(rz_hdr_in_get(&req, "CONNECTION"), "keep-alive, Upgrade")) { return 3; }
+  if (!rz_str_eq(rz_hdr_in_get(&req, "CONNECTION"), "keep-alive, Upgrade")) { return 3; }
   if (rz_hdr_in_get(&req, "Host").length != 0) { return 4; }
   if (!rz_hdr_in_has(&req, "x-twice")) { return 5; }
   if (rz_hdr_in_count(&req, "X-Twice") != 2) { return 6; }

@@ -40,9 +40,9 @@ fn rz_chan_def_for(r: RzChanRouter*, topic: string) -> int32 {
     var p: string = r->defs[i].pattern;
     var n: int64 = (int64)p.length;
     if (n > 0 && p.chars[n - 1] == 42) {
-      var prefix: string = raize_str_sub(p, 0, n - 1);
-      if ((int64)topic.length > n - 1 && raize_str_starts(topic, prefix)) { return i; }
-    } else if (raize_str_eq(p, topic)) {
+      var prefix: string = rz_str_sub(p, 0, n - 1);
+      if ((int64)topic.length > n - 1 && rz_str_starts(topic, prefix)) { return i; }
+    } else if (rz_str_eq(p, topic)) {
       return i;
     }
     i = i + 1;
@@ -53,10 +53,10 @@ fn rz_chan_def_for(r: RzChanRouter*, topic: string) -> int32 {
 fn rz_chan_send_reply(r: RzChanRouter*, sock: int64, m: RzChanMsg*, status: string, response: string) {
   r->out->len = 0;
   rz_chan_reply(r->out, m, status, response);
-  rz_hub_send(r->hub, sock, raize_buf_str(r->out));
+  rz_hub_send(r->hub, sock, rz_buf_str(r->out));
 }
 
-fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RaizeBuf*) {
+fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*) {
   var d: int32 = rz_chan_def_for(r, m->topic);
   if (d < 0) {
     rz_chan_send_reply(r, sock, m, "error", "{{\"reason\":\"unmatched topic\"}");
@@ -71,34 +71,34 @@ fn rz_chan_on_join(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RaizeBuf
   }
   var mem: RzChanMember* = &r->members[slot];
   mem->sock = sock;
-  mem->topic = raize_str_dup(m->topic);
-  mem->join_ref = raize_str_dup(m->join_ref);
+  mem->topic = rz_str_dup(m->topic);
+  mem->join_ref = rz_str_dup(m->join_ref);
   mem->def = d;
   var c: RzChanCtx = rz_chan_ctx(r, sock, mem->topic, mem->join_ref, 0);
   c.reply = reply;
   var rc: int32 = 0;
   if (r->defs[d].join != 0) { rc = r->defs[d].join(&c, m->payload); }
   if (rc != 0) {
-    raize_str_free(mem->topic);
-    raize_str_free(mem->join_ref);
+    rz_str_free(mem->topic);
+    rz_str_free(mem->join_ref);
     memset((rawptr)mem, 0, sizeof(RzChanMember));
-    var why: string = raize_buf_str(reply);
+    var why: string = rz_buf_str(reply);
     if (why.length == 0) { why = "{{\"reason\":\"join refused\"}"; }
     rz_chan_send_reply(r, sock, m, "error", why);
     return;
   }
   mem->state = c.state;
   mem->used = true;
-  rz_chan_send_reply(r, sock, m, "ok", raize_buf_str(reply));
+  rz_chan_send_reply(r, sock, m, "ok", rz_buf_str(reply));
 }
 
-fn rz_chan_on_event(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RaizeBuf*) {
+fn rz_chan_on_event(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RzBuf*) {
   var i: int32 = rz_chan_find(r, sock, m->topic);
   if (i < 0) {
     rz_chan_send_reply(r, sock, m, "error", "{{\"reason\":\"unmatched topic\"}");
     return;
   }
-  if (raize_str_eq(m->event, "phx_leave")) {
+  if (rz_str_eq(m->event, "phx_leave")) {
     rz_chan_remove(r, i);
     rz_chan_send_reply(r, sock, m, "ok", "");
     return;
@@ -112,9 +112,9 @@ fn rz_chan_on_event(r: RzChanRouter*, sock: int64, m: RzChanMsg*, reply: RaizeBu
   // The handler may have changed its state pointer.
   if (r->members[i].used && r->members[i].sock == sock) { r->members[i].state = c.state; }
   if (rc != 0) {
-    rz_chan_send_reply(r, sock, m, "error", raize_buf_str(reply));
+    rz_chan_send_reply(r, sock, m, "error", rz_buf_str(reply));
   } else if (reply->len > 0) {
-    rz_chan_send_reply(r, sock, m, "ok", raize_buf_str(reply));
+    rz_chan_send_reply(r, sock, m, "ok", rz_buf_str(reply));
   }
 }
 
@@ -130,15 +130,15 @@ fn rz_chan_on_message(hub: RzHub*, sock: int64, state: rawptr, op: int32, payloa
     rz_hub_close(hub, sock, 1003);
     return 0;
   }
-  var reply: RaizeBuf* = raize_buf_new();
-  if (raize_str_eq(m.topic, "phoenix") && raize_str_eq(m.event, "heartbeat")) {
+  var reply: RzBuf* = rz_buf_new();
+  if (rz_str_eq(m.topic, "phoenix") && rz_str_eq(m.event, "heartbeat")) {
     rz_chan_send_reply(r, sock, &m, "ok", "");
-  } else if (raize_str_eq(m.event, "phx_join")) {
+  } else if (rz_str_eq(m.event, "phx_join")) {
     rz_chan_on_join(r, sock, &m, reply);
   } else {
     rz_chan_on_event(r, sock, &m, reply);
   }
-  raize_buf_free(reply);
+  rz_buf_free(reply);
   return 0;
 }
 
@@ -162,7 +162,7 @@ export fn rz_chan_router_new(hub: RzHub*, max_members: int32) -> RzChanRouter* {
   r->max_members = max_members;
   r->members = (RzChanMember*)calloc((int64)max_members, sizeof(RzChanMember));
   r->scratch = rz_arena_new();
-  r->out = raize_buf_new();
+  r->out = rz_buf_new();
   if (r->members == 0 || r->scratch == 0) {
     rz_chan_router_free(r);
     return 0;
@@ -180,15 +180,15 @@ export fn rz_chan_router_free(r: RzChanRouter*) {
     var i: int32 = 0;
     while (i < r->max_members) {
       if (r->members[i].used) {
-        raize_str_free(r->members[i].topic);
-        raize_str_free(r->members[i].join_ref);
+        rz_str_free(r->members[i].topic);
+        rz_str_free(r->members[i].join_ref);
       }
       i = i + 1;
     }
     free((rawptr)r->members);
   }
   if (r->scratch != 0) { rz_arena_free(r->scratch); }
-  if (r->out != 0) { raize_buf_free(r->out); }
+  if (r->out != 0) { rz_buf_free(r->out); }
   free((rawptr)r);
 }
 

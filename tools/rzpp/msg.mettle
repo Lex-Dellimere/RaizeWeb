@@ -28,209 +28,209 @@ import "src";
 
 fn rzpp_payload_ok(t: string) -> bool {
   if (t.length == 0) { return true; }
-  return raize_str_eq(t, "int32") || raize_str_eq(t, "int64") || raize_str_eq(t, "bool") || raize_str_eq(t, "string");
+  return rz_str_eq(t, "int32") || rz_str_eq(t, "int64") || rz_str_eq(t, "bool") || rz_str_eq(t, "string");
 }
 
 // NameMsg__json(b, m): appends ["Variant", payload]. __put and __publish use it.
-fn rzpp_emit_json(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: RaizeStrList*) {
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__json(b: RaizeBuf*, m: ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, ") {{\n  match (m) {{\n");
+fn rzpp_emit_json(out: RzBuf*, name: string, vnames: RzStrList*, vtypes: RzStrList*) {
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__json(b: RzBuf*, m: ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, ") {{\n  match (m) {{\n");
   var k: int64 = 0;
   while (k < vnames->len) {
     var v: string = vnames->items[k];
     var t: string = vtypes->items[k];
-    var open: RaizeBuf* = raize_buf_new();
-    raize_buf_add(open, "[\"");
-    raize_buf_add(open, v);
-    raize_buf_add(open, "\"");
-    raize_buf_add(out, "    case ");
-    raize_buf_add(out, v);
-    if (t.length > 0) { raize_buf_add(out, "(v)"); }
-    raize_buf_add(out, ": {{ raize_buf_add(b, ");
-    rzpp_mettle_literal(out, raize_buf_str(open));
-    raize_buf_add(out, "); ");
+    var open: RzBuf* = rz_buf_new();
+    rz_buf_add(open, "[\"");
+    rz_buf_add(open, v);
+    rz_buf_add(open, "\"");
+    rz_buf_add(out, "    case ");
+    rz_buf_add(out, v);
+    if (t.length > 0) { rz_buf_add(out, "(v)"); }
+    rz_buf_add(out, ": {{ rz_buf_add(b, ");
+    rzpp_mettle_literal(out, rz_buf_str(open));
+    rz_buf_add(out, "); ");
     if (t.length > 0) {
-      raize_buf_add(out, "raize_buf_add_byte(b, 44); ");
-      if (raize_str_eq(t, "string")) { raize_buf_add(out, "rz_signal_arg_put_str(b, v); "); }
-      if (raize_str_eq(t, "bool")) { raize_buf_add(out, "rz_signal_arg_put_bool(b, v); "); }
-      if (raize_str_eq(t, "int32") || raize_str_eq(t, "int64")) { raize_buf_add(out, "raize_buf_add_int(b, (int64)v); "); }
+      rz_buf_add(out, "rz_buf_add_byte(b, 44); ");
+      if (rz_str_eq(t, "string")) { rz_buf_add(out, "rz_signal_arg_put_str(b, v); "); }
+      if (rz_str_eq(t, "bool")) { rz_buf_add(out, "rz_signal_arg_put_bool(b, v); "); }
+      if (rz_str_eq(t, "int32") || rz_str_eq(t, "int64")) { rz_buf_add(out, "rz_buf_add_int(b, (int64)v); "); }
     }
-    raize_buf_add(out, "raize_buf_add_byte(b, 93); }\n");
-    raize_buf_free(open);
+    rz_buf_add(out, "rz_buf_add_byte(b, 93); }\n");
+    rz_buf_free(open);
     k = k + 1;
   }
-  raize_buf_add(out, "  }\n}\n");
+  rz_buf_add(out, "  }\n}\n");
 }
 
 // NameMsg__put(h, i, m): the message as an attribute value (on:event={...}).
-fn rzpp_emit_put(out: RaizeBuf*, name: string) {
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__put(h: RzHtml*, i: int32, m: ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, ") {{\n  var b: RaizeBuf* = raize_buf_new();\n  ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__json(b, m);\n  rz_html_put_text(h, i, raize_buf_str(b));\n  raize_buf_free(b);\n}\n");
+fn rzpp_emit_put(out: RzBuf*, name: string) {
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__put(h: RzHtml*, i: int32, m: ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, ") {{\n  var b: RzBuf* = rz_buf_new();\n  ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__json(b, m);\n  rz_html_put_text(h, i, rz_buf_str(b));\n  rz_buf_free(b);\n}\n");
 }
 
 // NameMsg__publish(topic, m): any thread; every instance listening on topic
 // gets m through its update().
-fn rzpp_emit_publish(out: RaizeBuf*, name: string) {
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__publish(topic: string, m: ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, ") -> bool {{\n  var b: RaizeBuf* = raize_buf_new();\n  ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__json(b, m);\n  var ok: bool = rz_signal_publish(topic, raize_buf_str(b));\n  raize_buf_free(b);\n  return ok;\n}\n");
+fn rzpp_emit_publish(out: RzBuf*, name: string) {
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__publish(topic: string, m: ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, ") -> bool {{\n  var b: RzBuf* = rz_buf_new();\n  ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__json(b, m);\n  var ok: bool = rz_signal_publish(topic, rz_buf_str(b));\n  rz_buf_free(b);\n  return ok;\n}\n");
 }
 
-fn rzpp_emit_decode(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: RaizeStrList*) {
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__decode(name: string, value: string, out: ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "*) -> bool {{\n");
+fn rzpp_emit_decode(out: RzBuf*, name: string, vnames: RzStrList*, vtypes: RzStrList*) {
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__decode(name: string, value: string, out: ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "*) -> bool {{\n");
   var k: int64 = 0;
   while (k < vnames->len) {
     var v: string = vnames->items[k];
     var t: string = vtypes->items[k];
-    raize_buf_add(out, "  if (raize_str_eq(name, ");
+    rz_buf_add(out, "  if (rz_str_eq(name, ");
     rzpp_mettle_literal(out, v);
-    raize_buf_add(out, ")) {{ ");
+    rz_buf_add(out, ")) {{ ");
     if (t.length == 0) {
-      raize_buf_add(out, "*out = ");
-      raize_buf_add(out, v);
-      raize_buf_add(out, "; return true; }\n");
+      rz_buf_add(out, "*out = ");
+      rz_buf_add(out, v);
+      rz_buf_add(out, "; return true; }\n");
     } else {
-      if (raize_str_eq(t, "string")) {
-        raize_buf_add(out, "var x: string = raize_str_empty(); if (!rz_signal_arg_str(value, &x)) {{ return false; } ");
-      } else if (raize_str_eq(t, "bool")) {
-        raize_buf_add(out, "var x: bool = false; if (!rz_signal_arg_bool(value, &x)) {{ return false; } ");
+      if (rz_str_eq(t, "string")) {
+        rz_buf_add(out, "var x: string = rz_str_empty(); if (!rz_signal_arg_str(value, &x)) {{ return false; } ");
+      } else if (rz_str_eq(t, "bool")) {
+        rz_buf_add(out, "var x: bool = false; if (!rz_signal_arg_bool(value, &x)) {{ return false; } ");
       } else {
-        raize_buf_add(out, "var y: int64 = 0; if (!rz_signal_arg_int(value, &y)) {{ return false; } var x: ");
-        raize_buf_add(out, t);
-        raize_buf_add(out, " = (");
-        raize_buf_add(out, t);
-        raize_buf_add(out, ")y; ");
+        rz_buf_add(out, "var y: int64 = 0; if (!rz_signal_arg_int(value, &y)) {{ return false; } var x: ");
+        rz_buf_add(out, t);
+        rz_buf_add(out, " = (");
+        rz_buf_add(out, t);
+        rz_buf_add(out, ")y; ");
       }
-      raize_buf_add(out, "*out = ");
-      raize_buf_add(out, v);
-      raize_buf_add(out, "(x); return true; }\n");
+      rz_buf_add(out, "*out = ");
+      rz_buf_add(out, v);
+      rz_buf_add(out, "(x); return true; }\n");
     }
     k = k + 1;
   }
-  raize_buf_add(out, "  return false;\n}\n");
+  rz_buf_add(out, "  return false;\n}\n");
 }
 
 // Finds `fn NAME(a: STATE*, b: ENUM)` in src. Writes NAME and STATE.
 fn rzpp_find_update(src: string, enum_name: string, out_fn: string*, out_state: string*) -> bool {
-  var at: int64 = raize_str_find(src, "fn ");
+  var at: int64 = rz_str_find(src, "fn ");
   while (at >= 0) {
     var i: int64 = at + 3;
     var ns: int64 = i;
     while (i < (int64)src.length && rzpp_ident_char((int32)src.chars[i])) { i = i + 1; }
     if (i > ns && i < (int64)src.length && src.chars[i] == 40 && !rzpp_in_comment(src, at)) {
-      var close: int64 = raize_str_find_byte_from(src, 41, i);
+      var close: int64 = rz_str_find_byte_from(src, 41, i);
       if (close > i) {
-        var parts: RaizeStrList* = raize_str_split(raize_str_sub(src, i + 1, close), 44);
+        var parts: RzStrList* = rz_str_split(rz_str_sub(src, i + 1, close), 44);
         var found: bool = false;
         if (parts->len == 2) {
           var p0: string = rzpp_trim(parts->items[0]);
           var p1: string = rzpp_trim(parts->items[1]);
-          var c0: int64 = raize_str_find_byte(p0, 58);
-          var c1: int64 = raize_str_find_byte(p1, 58);
+          var c0: int64 = rz_str_find_byte(p0, 58);
+          var c1: int64 = rz_str_find_byte(p1, 58);
           if (c0 > 0 && c1 > 0) {
-            var t0: string = rzpp_trim(raize_str_from(p0, c0 + 1));
-            var t1: string = rzpp_trim(raize_str_from(p1, c1 + 1));
-            if (raize_str_eq(t1, enum_name) && raize_str_ends(t0, "*")) {
-              *out_fn = raize_str_sub(src, ns, i);
-              *out_state = rzpp_trim(raize_str_sub(t0, 0, (int64)t0.length - 1));
+            var t0: string = rzpp_trim(rz_str_from(p0, c0 + 1));
+            var t1: string = rzpp_trim(rz_str_from(p1, c1 + 1));
+            if (rz_str_eq(t1, enum_name) && rz_str_ends(t0, "*")) {
+              *out_fn = rz_str_sub(src, ns, i);
+              *out_state = rzpp_trim(rz_str_sub(t0, 0, (int64)t0.length - 1));
               found = true;
             }
           }
         }
-        raize_strlist_free(parts);
+        rz_strlist_free(parts);
         if (found) { return true; }
       }
     }
-    at = raize_str_find_from(src, "fn ", at + 3);
+    at = rz_str_find_from(src, "fn ", at + 3);
   }
   return false;
 }
 
 // A value of the enum to initialize with (the compiler requires one before
 // &m is passed to decode): the first variant, with a zero payload.
-fn rzpp_default_variant(out: RaizeBuf*, v: string, t: string) {
-  raize_buf_add(out, v);
+fn rzpp_default_variant(out: RzBuf*, v: string, t: string) {
+  rz_buf_add(out, v);
   if (t.length == 0) { return; }
-  if (raize_str_eq(t, "string")) { raize_buf_add(out, "(\"\")"); return; }
-  if (raize_str_eq(t, "bool")) { raize_buf_add(out, "(false)"); return; }
-  raize_buf_add(out, "((");
-  raize_buf_add(out, t);
-  raize_buf_add(out, ")0)");
+  if (rz_str_eq(t, "string")) { rz_buf_add(out, "(\"\")"); return; }
+  if (rz_str_eq(t, "bool")) { rz_buf_add(out, "(false)"); return; }
+  rz_buf_add(out, "((");
+  rz_buf_add(out, t);
+  rz_buf_add(out, ")0)");
 }
 
-fn rzpp_emit_signal(out: RaizeBuf*, name: string, update: string, state: string, v0: string, t0: string) {
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__handle(state: rawptr, name: string, value: string) -> int32 {{\n  var m: ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, " = ");
+fn rzpp_emit_signal(out: RzBuf*, name: string, update: string, state: string, v0: string, t0: string) {
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__handle(state: rawptr, name: string, value: string) -> int32 {{\n  var m: ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, " = ");
   rzpp_default_variant(out, v0, t0);
-  raize_buf_add(out, ";\n  if (!");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__decode(name, value, &m)) {{ return -1; }\n  ");
-  raize_buf_add(out, update);
-  raize_buf_add(out, "((");
-  raize_buf_add(out, state);
-  raize_buf_add(out, "*)state, m);\n  return 0;\n}\n");
-  raize_buf_add(out, "fn ");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__signal(chans: RzChanRouter*, name: string, mount: fn(");
-  raize_buf_add(out, state);
-  raize_buf_add(out, "*) -> void, view: fn(");
-  raize_buf_add(out, state);
-  raize_buf_add(out, "*) -> RzHtml*, leave: fn(");
-  raize_buf_add(out, state);
-  raize_buf_add(out, "*) -> void) -> int32 {{\n  return rz_signal_define_raw(chans, name, sizeof(");
-  raize_buf_add(out, state);
-  raize_buf_add(out, "), (fn(rawptr) -> void)mount, &");
-  raize_buf_add(out, name);
-  raize_buf_add(out, "__handle, (fn(rawptr) -> RzHtml*)view, (fn(rawptr) -> void)leave);\n}\n");
+  rz_buf_add(out, ";\n  if (!");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__decode(name, value, &m)) {{ return -1; }\n  ");
+  rz_buf_add(out, update);
+  rz_buf_add(out, "((");
+  rz_buf_add(out, state);
+  rz_buf_add(out, "*)state, m);\n  return 0;\n}\n");
+  rz_buf_add(out, "fn ");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__signal(chans: RzChanRouter*, name: string, mount: fn(");
+  rz_buf_add(out, state);
+  rz_buf_add(out, "*) -> void, view: fn(");
+  rz_buf_add(out, state);
+  rz_buf_add(out, "*) -> RzHtml*, leave: fn(");
+  rz_buf_add(out, state);
+  rz_buf_add(out, "*) -> void) -> int32 {{\n  return rz_signal_define_raw(chans, name, sizeof(");
+  rz_buf_add(out, state);
+  rz_buf_add(out, "), (fn(rawptr) -> void)mount, &");
+  rz_buf_add(out, name);
+  rz_buf_add(out, "__handle, (fn(rawptr) -> RzHtml*)view, (fn(rawptr) -> void)leave);\n}\n");
 }
 
 // Finds every message enum in g->src, registers its variants, and appends
 // the generated functions to `out`.
-export fn rzpp_messages(g: RzppGen*, out: RaizeBuf*) {
+export fn rzpp_messages(g: RzppGen*, out: RzBuf*) {
   var src: string = g->src;
-  var at: int64 = raize_str_find(src, "enum ");
+  var at: int64 = rz_str_find(src, "enum ");
   while (at >= 0 && !rzpp_failed(g)) {
     var i: int64 = at + 5;
     var ns: int64 = i;
     while (i < (int64)src.length && rzpp_ident_char((int32)src.chars[i])) { i = i + 1; }
-    var name: string = raize_str_sub(src, ns, i);
-    var open: int64 = raize_str_find_byte_from(src, 123, i);
-    var line_ok: bool = (at == 0 || src.chars[at - 1] == 10 || raize_char_is_space((int32)src.chars[at - 1])) && !rzpp_in_comment(src, at);
-    if (line_ok && raize_str_ends(name, "Msg") && open > 0) {
+    var name: string = rz_str_sub(src, ns, i);
+    var open: int64 = rz_str_find_byte_from(src, 123, i);
+    var line_ok: bool = (at == 0 || src.chars[at - 1] == 10 || rz_char_is_space((int32)src.chars[at - 1])) && !rzpp_in_comment(src, at);
+    if (line_ok && rz_str_ends(name, "Msg") && open > 0) {
       var close: int64 = rzpp_match_brace(src, open);
       if (close < 0) { rzpp_fail(g, at, "unclosed enum {name}"); return; }
-      var vnames: RaizeStrList* = raize_strlist_new();
-      var vtypes: RaizeStrList* = raize_strlist_new();
-      var parts: RaizeStrList* = raize_str_split(raize_str_sub(src, open + 1, close), 44);
+      var vnames: RzStrList* = rz_strlist_new();
+      var vtypes: RzStrList* = rz_strlist_new();
+      var parts: RzStrList* = rz_str_split(rz_str_sub(src, open + 1, close), 44);
       var k: int64 = 0;
       while (k < parts->len) {
         var p: string = rzpp_trim(parts->items[k]);
         if (p.length > 0) {
-          var paren: int64 = raize_str_find_byte(p, 40);
+          var paren: int64 = rz_str_find_byte(p, 40);
           var vname: string = p;
-          var vtype: string = raize_str_empty();
+          var vtype: string = rz_str_empty();
           if (paren > 0) {
-            vname = rzpp_trim(raize_str_sub(p, 0, paren));
-            vtype = rzpp_trim(raize_str_sub(p, paren + 1, (int64)p.length - 1));
+            vname = rzpp_trim(rz_str_sub(p, 0, paren));
+            vtype = rzpp_trim(rz_str_sub(p, paren + 1, (int64)p.length - 1));
           }
           if (!rzpp_payload_ok(vtype)) {
             rzpp_fail(g, open, "{name}.{vname}: message payloads are int32, int64, bool or string");
@@ -238,27 +238,27 @@ export fn rzpp_messages(g: RzppGen*, out: RaizeBuf*) {
           if (rzpp_list_index(g->variants, vname) >= 0) {
             rzpp_fail(g, open, "variant {vname} is declared by two message enums");
           }
-          raize_strlist_push(vnames, vname);
-          raize_strlist_push(vtypes, vtype);
-          raize_strlist_push(g->variants, vname);
-          raize_strlist_push(g->owners, name);
+          rz_strlist_push(vnames, vname);
+          rz_strlist_push(vtypes, vtype);
+          rz_strlist_push(g->variants, vname);
+          rz_strlist_push(g->owners, name);
         }
         k = k + 1;
       }
-      raize_strlist_free(parts);
+      rz_strlist_free(parts);
       rzpp_emit_json(out, name, vnames, vtypes);
       rzpp_emit_put(out, name);
       rzpp_emit_decode(out, name, vnames, vtypes);
-      var ufn: string = raize_str_empty();
-      var ustate: string = raize_str_empty();
+      var ufn: string = rz_str_empty();
+      var ustate: string = rz_str_empty();
       if (vnames->len > 0 && rzpp_find_update(src, name, &ufn, &ustate)) {
         rzpp_emit_signal(out, name, ufn, ustate, vnames->items[0], vtypes->items[0]);
         rzpp_emit_publish(out, name);
       }
-      raize_strlist_push(g->enums, name);
-      raize_strlist_free(vnames);
-      raize_strlist_free(vtypes);
+      rz_strlist_push(g->enums, name);
+      rz_strlist_free(vnames);
+      rz_strlist_free(vtypes);
     }
-    at = raize_str_find_from(src, "enum ", i);
+    at = rz_str_find_from(src, "enum ", i);
   }
 }

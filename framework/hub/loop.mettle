@@ -63,7 +63,7 @@ fn rz_hub_on_ws_message(ctx: rawptr, op: int32, payload: string) -> int32 {
 }
 
 fn rz_hub_flush(hub: RzHub*, s: RzHubSlot*) {
-  var out: RaizeBuf* = s->ws->out;
+  var out: RzBuf* = s->ws->out;
   while (out->len > 0) {
     var n: int64 = rz_sys_send(s->fd, out->data, out->len);
     if (n == RZ_EINTR) { continue; }
@@ -177,7 +177,7 @@ fn rz_hub_mailbox(hub: RzHub*, now_ms: int64) -> bool {
       free((rawptr)a);
     } else if (m.kind == RZ_HUB_MSG_SEND || m.kind == RZ_HUB_MSG_BROADCAST) {
       var b: RzHubBytes* = (RzHubBytes*)m.ptr;
-      var text: string = raize_str_view(b->data, b->len);
+      var text: string = rz_str_view(b->data, b->len);
       if (m.kind == RZ_HUB_MSG_SEND) {
         rz_hub_send_op(hub, m.a, (int32)m.b, text);
       } else {

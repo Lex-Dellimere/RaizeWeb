@@ -90,11 +90,11 @@ export fn rz_arena_alloc_zeroed(a: RzArena*, n: int64) -> uint8* {
 // Copy bytes into the arena. The result carries no NUL terminator; use
 // rz_arena_cstr when a C string is required.
 export fn rz_arena_bytes(a: RzArena*, p: uint8*, n: int64) -> string {
-  if (n <= 0) { return raize_str_empty(); }
+  if (n <= 0) { return rz_str_empty(); }
   var d: uint8* = rz_arena_alloc(a, n);
-  if (d == 0) { return raize_str_empty(); }
+  if (d == 0) { return rz_str_empty(); }
   memcpy((rawptr)d, (rawptr)p, n);
-  return raize_str_view(d, n);
+  return rz_str_view(d, n);
 }
 
 export fn rz_arena_str(a: RzArena*, s: string) -> string {
@@ -190,7 +190,7 @@ export fn rz_arena_ok(a: RzArena*) -> bool {
   if (a == 0) { return 1; }
   var src: string = "hello arena";
   var d: string = rz_arena_str(a, src);
-  if (!raize_str_eq(d, src)) { rz_arena_free(a); return 2; }
+  if (!rz_str_eq(d, src)) { rz_arena_free(a); return 2; }
   // The copy does not alias the literal.
   if (d.chars == src.chars) { rz_arena_free(a); return 3; }
   var c: cstring = rz_arena_cstr(a, src);

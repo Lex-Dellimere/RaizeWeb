@@ -11,7 +11,7 @@ fn main() -> int32 {
   print("accept [{a}]\n");
   var g: string = RZ_WS_GUID;
   print("guid len {g.length}\n");
-  if (raize_str_eq(a, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")) { print("PASS\n"); return 0; }
+  if (rz_str_eq(a, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")) { print("PASS\n"); return 0; }
   print("FAIL\n");
   return 1;
 }

@@ -11,7 +11,7 @@
 //       arena, which is reset between requests.
 //
 // A view therefore dies when the request ends. Anything that must outlive the
-// request (a session, a log line) is copied with raize_str_dup or into the
+// request (a session, a log line) is copied with rz_str_dup or into the
 // arena. This is stated once, in the file header, and nowhere else pretends
 // otherwise.
 //
@@ -99,7 +99,7 @@ export fn rz_request_reset(req: RzRequest*) {
 // ---------------------------------------------------------------------------
 
 export fn rz_req_header(req: RzRequest*, name: string) -> string {
-  if (req == 0) { return raize_str_empty(); }
+  if (req == 0) { return rz_str_empty(); }
   return rz_header_get(req->headers, req->header_count, name);
 }
 
@@ -115,8 +115,8 @@ export fn rz_req_header_count(req: RzRequest*, name: string) -> int32 {
 
 export fn rz_req_header_at(req: RzRequest*, i: int32) -> RzHeader {
   var empty: RzHeader;
-  empty.name = raize_str_empty();
-  empty.value = raize_str_empty();
+  empty.name = rz_str_empty();
+  empty.value = rz_str_empty();
   if (req == 0) { return empty; }
   if (i < 0) { return empty; }
   if (i >= req->header_count) { return empty; }
@@ -129,7 +129,7 @@ export fn rz_req_header_at(req: RzRequest*, i: int32) -> RzHeader {
 
 export fn rz_req_verb_is(req: RzRequest*, verb: string) -> bool {
   if (req == 0) { return false; }
-  return raize_str_eq(req->verb, verb);
+  return rz_str_eq(req->verb, verb);
 }
 
 export fn rz_req_is_get(req: RzRequest*) -> bool { return rz_req_verb_is(req, "GET"); }
@@ -140,20 +140,20 @@ export fn rz_req_is_head(req: RzRequest*) -> bool { return rz_req_verb_is(req, "
 // ("application/json; charset=utf-8" -> "application/json"). View, not owned.
 export fn rz_req_media_type(req: RzRequest*) -> string {
   var ct: string = rz_req_header(req, "content-type");
-  var semi: int64 = raize_str_find_byte(ct, 59);
+  var semi: int64 = rz_str_find_byte(ct, 59);
   if (semi >= 0) {
-    ct = raize_str_sub(ct, 0, semi);
+    ct = rz_str_sub(ct, 0, semi);
   }
   return rz_header_trim(ct);
 }
 
 export fn rz_req_is_json(req: RzRequest*) -> bool {
   var mt: string = rz_req_media_type(req);
-  if (raize_str_eq_ci(mt, "application/json")) { return true; }
+  if (rz_str_eq_ci(mt, "application/json")) { return true; }
   var n: int64 = (int64)mt.length;
   if (n < 5) { return false; }
   // "+json" structured suffix (application/geo+json and friends)
-  return raize_str_eq_ci(raize_str_sub(mt, n - 5, n), "+json");
+  return rz_str_eq_ci(rz_str_sub(mt, n - 5, n), "+json");
 }
 
 // ---------------------------------------------------------------------------
@@ -171,21 +171,21 @@ export fn rz_req_param_set(req: RzRequest*, name: string, value: string) -> bool
 }
 
 export fn rz_req_param(req: RzRequest*, name: string) -> string {
-  if (req == 0) { return raize_str_empty(); }
+  if (req == 0) { return rz_str_empty(); }
   var i: int32 = 0;
   while (i < req->param_count) {
-    if (raize_str_eq(req->params[i].name, name)) {
+    if (rz_str_eq(req->params[i].name, name)) {
       return req->params[i].value;
     }
     i = i + 1;
   }
-  return raize_str_empty();
+  return rz_str_empty();
 }
 
 export fn rz_req_param_at(req: RzRequest*, i: int32) -> RzParam {
   var empty: RzParam;
-  empty.name = raize_str_empty();
-  empty.value = raize_str_empty();
+  empty.name = rz_str_empty();
+  empty.value = rz_str_empty();
   if (req == 0) { return empty; }
   if (i < 0) { return empty; }
   if (i >= req->param_count) { return empty; }
@@ -215,13 +215,13 @@ export fn rz_req_param_at(req: RzRequest*, i: int32) -> RzParam {
   items[2].value = "12";
   req.header_count = 3;
 
-  if (!raize_str_eq(rz_req_header(&req, "host"), "example")) { rz_arena_free(arena); return 7; }
+  if (!rz_str_eq(rz_req_header(&req, "host"), "example")) { rz_arena_free(arena); return 7; }
   if (!rz_req_has_header(&req, "HOST")) { rz_arena_free(arena); return 8; }
   if (rz_req_header_count(&req, "content-length") != 1) { rz_arena_free(arena); return 9; }
-  if (!raize_str_eq(rz_req_header_at(&req, 1).name, "Content-Type")) { rz_arena_free(arena); return 10; }
+  if (!rz_str_eq(rz_req_header_at(&req, 1).name, "Content-Type")) { rz_arena_free(arena); return 10; }
   if (rz_req_header_at(&req, 99).name.length != 0) { rz_arena_free(arena); return 11; }
   if (!rz_req_is_json(&req)) { rz_arena_free(arena); return 12; }
-  if (!raize_str_eq(rz_req_media_type(&req), "application/json")) { rz_arena_free(arena); return 13; }
+  if (!rz_str_eq(rz_req_media_type(&req), "application/json")) { rz_arena_free(arena); return 13; }
   rz_arena_free(arena);
   return 0;
 }
@@ -233,8 +233,8 @@ export fn rz_req_param_at(req: RzRequest*, i: int32) -> RzParam {
   if (!rz_request_init(&req, arena)) { rz_arena_free(arena); return 2; }
   if (!rz_req_param_set(&req, "id", "42")) { rz_arena_free(arena); return 3; }
   if (!rz_req_param_set(&req, "slug", "hello-world")) { rz_arena_free(arena); return 4; }
-  if (!raize_str_eq(rz_req_param(&req, "id"), "42")) { rz_arena_free(arena); return 5; }
-  if (!raize_str_eq(rz_req_param_at(&req, 1).value, "hello-world")) { rz_arena_free(arena); return 6; }
+  if (!rz_str_eq(rz_req_param(&req, "id"), "42")) { rz_arena_free(arena); return 5; }
+  if (!rz_str_eq(rz_req_param_at(&req, 1).value, "hello-world")) { rz_arena_free(arena); return 6; }
   if (rz_req_param(&req, "nope").length != 0) { rz_arena_free(arena); return 7; }
   // The array is bounded: the 17th param is refused, not grown.
   var i: int32 = 2;

@@ -45,40 +45,40 @@ var g_chain: RzChain* = 0;
 
 fn app_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
   if (token == 0) { return 401; }
-  if (!raize_str_eq(*token, APP_TOKEN)) { return 401; }
+  if (!rz_str_eq(*token, APP_TOKEN)) { return 401; }
   if (principal != 0) { *principal = (rawptr)ctx; }
   return 200;
 }
 
 fn app_terminal(ctx: RzContext*) -> int32 {
-  var path: string = raize_str_empty();
+  var path: string = rz_str_empty();
   if (ctx->req != 0) { path = ctx->req->path; }
-  if (raize_str_eq(path, "/ok")) { return rz_ctx_text(ctx, 200, "ok\n"); }
-  if (raize_str_eq(path, "/secret")) {
+  if (rz_str_eq(path, "/ok")) { return rz_ctx_text(ctx, 200, "ok\n"); }
+  if (rz_str_eq(path, "/secret")) {
     if (ctx->user == 0) { return rz_ctx_text(ctx, 500, "no principal\n"); }
     return rz_ctx_text(ctx, 200, "secret\n");
   }
-  if (raize_str_eq(path, "/boom")) {
-    raize_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
+  if (rz_str_eq(path, "/boom")) {
+    rz_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
     ctx->resp->status = 500;
     ctx->status = 500;
     return 500;
   }
-  if (raize_str_eq(path, "/inject")) {
+  if (rz_str_eq(path, "/inject")) {
     var rc: int32 = rz_hdr_set(ctx->resp, "X-Echo", "v\r\nX-Injected: 1");
     if (rc != RZ_HDR_REJECTED) { return rz_ctx_text(ctx, 500, "guard did not fire\n"); }
     return rz_ctx_text(ctx, 200, "refused\n");
   }
-  if (raize_str_eq(path, "/arena")) {
+  if (rz_str_eq(path, "/arena")) {
     var used: int64 = 0;
     if (ctx->arena != 0) { used = rz_arena_used(ctx->arena); }
-    var b: RaizeBuf* = raize_buf_new_cap(64);
+    var b: RzBuf* = rz_buf_new_cap(64);
     if (b == 0) { return rz_ctx_text(ctx, 500, "oom\n"); }
-    raize_buf_add_int(b, used);
-    raize_buf_add(b, "\n");
+    rz_buf_add_int(b, used);
+    rz_buf_add(b, "\n");
     // rz_ctx_text copies the body into the response before returning
-    var st: int32 = rz_ctx_text(ctx, 200, raize_buf_str(b));
-    raize_buf_free(b);
+    var st: int32 = rz_ctx_text(ctx, 200, rz_buf_str(b));
+    rz_buf_free(b);
     return st;
   }
   return rz_ctx_text(ctx, 404, "not found\n");
@@ -99,12 +99,12 @@ fn read_port(dflt: int32) -> int32 {
   var want: bool = false;
   while (i < n) {
     if (buf[i] == 0) {
-      var a: string = raize_str_view(&buf[start], i - start);
+      var a: string = rz_str_view(&buf[start], i - start);
       if (want) {
-        var v: int64 = raize_str_to_int(a);
+        var v: int64 = rz_str_to_int(a);
         if (v > 0 && v < 65536) { port = (int32)v; }
         want = false;
-      } else if (raize_str_eq(a, "--port")) {
+      } else if (rz_str_eq(a, "--port")) {
         want = true;
       }
       start = i + 1;

@@ -65,7 +65,7 @@ export fn rz_router_allow(mask: int32, buf: uint8*, cap: int64) -> string {
     b = b * 2;
     i = i + 1;
   }
-  return raize_str_view(buf, n);
+  return rz_str_view(buf, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +331,7 @@ export fn rz_router_handle_path(rt: RzRouter*, ctx: RzContext*, raw_path: string
   if (!rt->path_decoded) {
     var dn: int64 = rz_decode_path(raw_path, &scratch[0], RZ_MAX_PATH);
     if (dn < 0) { return rz_fail(ctx, 400); }
-    path = raize_str_view(&scratch[0], dn);
+    path = rz_str_view(&scratch[0], dn);
   }
   if ((int64)path.length == 0) { return rz_fail(ctx, 400); }
   if (path.chars[0] != 47) { return rz_fail(ctx, 400); }
@@ -369,7 +369,7 @@ export fn rz_router_handle_path(rt: RzRouter*, ctx: RzContext*, raw_path: string
   var i: int32 = 0;
   while (i < m.ncap) {
     req->params[i].name = rt->nodes[cap_node[i]].name;
-    req->params[i].value = raize_str_view(&path.chars[cap_start[i]], cap_len[i]);
+    req->params[i].value = rz_str_view(&path.chars[cap_start[i]], cap_len[i]);
     i = i + 1;
   }
   req->param_count = m.ncap;

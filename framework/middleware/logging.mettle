@@ -142,7 +142,7 @@ export fn rz_log_clock_ok() -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// A bounded byte sink. Not a RaizeBuf on purpose: a RaizeBuf grows by
+// A bounded byte sink. Not a RzBuf on purpose: a RzBuf grows by
 // malloc'ing, and a log line must never allocate (it is on the request path
 // and its own failure mode would be a log of the log).
 // ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ fn rz_sink_str(s: RzLogSink*, v: string) {
 
 fn rz_sink_int(s: RzLogSink*, n: int64) {
   var b: uint8[24];
-  var v: string = raize_int_buf(n, &b[0], 24);
+  var v: string = rz_int_buf(n, &b[0], 24);
   rz_sink_str(s, v);
 }
 
@@ -291,7 +291,7 @@ export fn rz_log_recovery(ctx: RzContext*, status: int32, bytes: int64, detail: 
   rz_sink_str(&s, " detail=\"");
   rz_sink_escaped_n(&s, detail, RZ_LOG_DETAIL_MAX);
   rz_sink_str(&s, "\"");
-  var line: string = raize_str_view(&buf[0], s.len);
+  var line: string = rz_str_view(&buf[0], s.len);
   println_err(line);
   atomic_inc_i32(&rz_log_cfg()->stats.recovery_lines);
   return s.len;
@@ -324,7 +324,7 @@ export fn rz_mw_logging(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int32
   var status: int32 = rz_chain_status(ctx, st);
   var line: uint8[RZ_LOG_LINE_MAX];
   var n: int64 = rz_log_format(&line[0], RZ_LOG_LINE_MAX, ctx, status, bytes, t0, t1);
-  var v: string = raize_str_view(&line[0], n);
+  var v: string = rz_str_view(&line[0], n);
   println(v);
   atomic_inc_i32(&cfg->stats.lines);
   return st;
@@ -377,20 +377,20 @@ fn t_log_term(ctx: RzContext*) -> int32 {
   req.path = "/hello/world";
   var out: uint8[RZ_LOG_LINE_MAX];
   var n: int64 = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 13, 1000, 1250);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=200 bytes=13 ms=0.250")) { return 4; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=200 bytes=13 ms=0.250")) { return 4; }
   // millisecond padding: 0.004 must not print as 0.4 or 0.04
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 500, 22, 1000, 1004);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=500 bytes=22 ms=0.004")) { return 5; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=500 bytes=22 ms=0.004")) { return 5; }
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 418, 0, 1000, 2500);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=418 bytes=0 ms=1.500")) { return 6; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=418 bytes=0 ms=1.500")) { return 6; }
   // an abort is visible in the line
   ctx.aborted = true;
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 401, 12, 1000, 1001);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=401 bytes=12 ms=0.001 aborted=1")) { return 7; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=GET path=\"/hello/world\" status=401 bytes=12 ms=0.001 aborted=1")) { return 7; }
   ctx.aborted = false;
   // no context at all still produces one well-formed line
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, 0, 500, 0, 0, 0);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=- path=\"-\" status=500 bytes=0 ms=na")) { return 8; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=- path=\"-\" status=500 bytes=0 ms=na")) { return 8; }
   return 0;
 }
 
@@ -410,31 +410,31 @@ fn t_log_term(ctx: RzContext*) -> int32 {
   req.path = "/a\ninjected=1";
   var out: uint8[RZ_LOG_LINE_MAX];
   var n: int64 = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 1000, 1000);
-  var line: string = raize_str_view(&out[0], n);
-  if (!raize_str_eq(line, "req verb=GET path=\"/a\\ninjected=1\" status=200 bytes=0 ms=0.000")) { return 4; }
+  var line: string = rz_str_view(&out[0], n);
+  if (!rz_str_eq(line, "req verb=GET path=\"/a\\ninjected=1\" status=200 bytes=0 ms=0.000")) { return 4; }
   // quote and backslash are escaped, not passed through
   req.path = "/q\"b\\c";
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 1000, 1000);
-  line = raize_str_view(&out[0], n);
-  if (!raize_str_eq(line, "req verb=GET path=\"/q\\\"b\\\\c\" status=200 bytes=0 ms=0.000")) { return 5; }
+  line = rz_str_view(&out[0], n);
+  if (!rz_str_eq(line, "req verb=GET path=\"/q\\\"b\\\\c\" status=200 bytes=0 ms=0.000")) { return 5; }
   // other C0 bytes become \xNN (no \x string escape in Mettle: build the byte)
   var ctl: uint8[2];
   ctl[0] = 47;    // '/'
   ctl[1] = 1;
-  req.path = raize_str_view(&ctl[0], 2);
+  req.path = rz_str_view(&ctl[0], 2);
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 1000, 1000);
-  line = raize_str_view(&out[0], n);
-  if (!raize_str_eq(line, "req verb=GET path=\"/\\x01\" status=200 bytes=0 ms=0.000")) { return 6; }
+  line = rz_str_view(&out[0], n);
+  if (!rz_str_eq(line, "req verb=GET path=\"/\\x01\" status=200 bytes=0 ms=0.000")) { return 6; }
   // a path longer than RZ_LOG_PATH_MAX input bytes is cut and marked, and the
   // line still ends where the buffer ends (never a partial escape)
   var long: uint8[400];
   var i: int64 = 0;
   while (i < 400) { long[i] = 65; i = i + 1; }
-  req.path = raize_str_view(&long[0], 400);
+  req.path = rz_str_view(&long[0], 400);
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 1000, 1000);
-  line = raize_str_view(&out[0], n);
+  line = rz_str_view(&out[0], n);
   if (n >= (int64)RZ_LOG_LINE_MAX) { return 7; }
-  if (!raize_str_ends(line, "...\" status=200 bytes=0 ms=0.000")) { return 8; }
+  if (!rz_str_ends(line, "...\" status=200 bytes=0 ms=0.000")) { return 8; }
   return 0;
 }
 
@@ -454,10 +454,10 @@ fn t_log_term(ctx: RzContext*) -> int32 {
   var out: uint8[RZ_LOG_LINE_MAX];
   // a clock that could not be read is reported, never replaced by a wall clock
   var n: int64 = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 0, 0);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "req verb=GET path=\"/\" status=200 bytes=0 ms=na")) { return 4; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "req verb=GET path=\"/\" status=200 bytes=0 ms=na")) { return 4; }
   // an end before the start is also "no measurement", not a negative duration
   n = rz_log_format(&out[0], RZ_LOG_LINE_MAX, &ctx, 200, 0, 2000, 1000);
-  if (!raize_str_ends(raize_str_view(&out[0], n), "ms=na")) { return 5; }
+  if (!rz_str_ends(rz_str_view(&out[0], n), "ms=na")) { return 5; }
   return 0;
 }
 
@@ -483,7 +483,7 @@ fn t_log_term(ctx: RzContext*) -> int32 {
   // logging returns exactly what the continuation returned: it observes, never
   // rewrites
   if (rz_mw_logging(&ctx, &t_log_term) != 201) { return 6; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "hello")) { return 7; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "hello")) { return 7; }
   var st: RzLogStats = rz_log_stats(l);
   if (st.lines != 1) { return 8; }
   if (st.clock_missing != 0) { return 9; }

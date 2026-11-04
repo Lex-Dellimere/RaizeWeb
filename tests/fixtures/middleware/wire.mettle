@@ -48,7 +48,7 @@ fn check(name: string, ok: bool) {
 }
 
 fn check_eq(name: string, got: string, want: string) {
-  if (raize_str_eq(got, want)) {
+  if (rz_str_eq(got, want)) {
     println("PASS  {name}");
   } else {
     println("FAIL  {name}: got [{got}] want [{want}]");
@@ -72,7 +72,7 @@ fn check_int(name: string, got: int64, want: int64) {
 
 fn wire_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
   if (token == 0) { return 401; }
-  if (!raize_str_eq(*token, WIRE_TOKEN)) { return 401; }
+  if (!rz_str_eq(*token, WIRE_TOKEN)) { return 401; }
   if (principal != 0) { *principal = (rawptr)ctx; }   // "the user is the context here"
   return 200;
 }
@@ -87,24 +87,24 @@ fn wire_verify_bug(ctx: RzContext*, token: string*, principal: rawptr*) -> int32
 
 fn wire_terminal(ctx: RzContext*) -> int32 {
   g_next_calls = g_next_calls + 1;
-  var path: string = raize_str_empty();
+  var path: string = rz_str_empty();
   if (ctx->req != 0) { path = ctx->req->path; }
-  if (raize_str_eq(path, "/ok")) {
+  if (rz_str_eq(path, "/ok")) {
     return rz_ctx_text(ctx, 200, "ok\n");
   }
-  if (raize_str_eq(path, "/secret")) {
+  if (rz_str_eq(path, "/secret")) {
     // only reachable past auth; reports the principal auth installed
     if (ctx->user == 0) { return rz_ctx_text(ctx, 500, "no principal\n"); }
     return rz_ctx_text(ctx, 200, "secret\n");
   }
-  if (raize_str_eq(path, "/boom")) {
+  if (rz_str_eq(path, "/boom")) {
     // a handler fault: the detail must not reach the client
-    raize_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
+    rz_buf_add(ctx->resp->body, "hunter2 db password at handlers/boom.mettle:42\n");
     ctx->resp->status = 500;
     ctx->status = 500;
     return 500;
   }
-  if (raize_str_eq(path, "/inject")) {
+  if (rz_str_eq(path, "/inject")) {
     // response splitting attempt: a header value built from request data
     var rc: int32 = rz_hdr_set(ctx->resp, "X-Echo", "v\r\nX-Injected: 1");
     if (rc != RZ_HDR_REJECTED) { return rz_ctx_text(ctx, 500, "guard did not fire\n"); }
@@ -130,10 +130,10 @@ fn wire_req_new() -> WireReq {
   var r: WireReq;
   r.verb = "GET";
   r.path = "/ok";
-  r.origin = raize_str_empty();
-  r.acrm = raize_str_empty();
-  r.auth = raize_str_empty();
-  r.auth2 = raize_str_empty();
+  r.origin = rz_str_empty();
+  r.acrm = rz_str_empty();
+  r.auth = rz_str_empty();
+  r.auth2 = rz_str_empty();
   return r;
 }
 
@@ -147,7 +147,7 @@ fn wire_add(req: RzRequest*, name: string, value: string) {
 // Runs one request through the mounted chain. Returns the chain's answer (the
 // number the server would treat as a handler result). The arena is created and
 // freed per request, exactly like rz_conn_serve does.
-fn wire_run(w: WireReq, out_body: RaizeBuf*) -> int32 {
+fn wire_run(w: WireReq, out_body: RzBuf*) -> int32 {
   var arena: RzArena* = rz_arena_new();
   if (arena == 0) { return -1; }
   defer rz_arena_free(arena);
@@ -167,7 +167,7 @@ fn wire_run(w: WireReq, out_body: RaizeBuf*) -> int32 {
   var st: int32 = rz_chain_serve(g_chain, &ctx);
   // hand the body/status back to the caller before the response is freed
   out_body->len = 0;
-  if (resp->body != 0) { raize_buf_add(out_body, raize_buf_str(resp->body)); }
+  if (resp->body != 0) { rz_buf_add(out_body, rz_buf_str(resp->body)); }
   if (st == 0 && ctx.aborted) { return resp->status; }
   if (st == 0) { return resp->status; }
   return st;
@@ -217,13 +217,13 @@ fn main() -> int32 {
   }
   var desc: uint8[64];
   var dn: int64 = rz_chain_describe(g_chain, &desc[0], 64);
-  check_eq("chain: order", raize_str_view(&desc[0], dn), "recover,logging,cors,auth");
+  check_eq("chain: order", rz_str_view(&desc[0], dn), "recover,logging,cors,auth");
   var handler: fn(RzContext*) -> int32 = rz_chain_handler(g_chain);
   check("chain: mounted handler is not null", handler != (fn(RzContext*) -> int32)0);
 
-  var body: RaizeBuf* = raize_buf_new_cap(512);
+  var body: RzBuf* = rz_buf_new_cap(512);
   if (body == 0) { return 6; }
-  defer raize_buf_free(body);
+  defer rz_buf_free(body);
 
   // ---- the clock ----------------------------------------------------------
   // Monotonic source: std/bench -> clock_gettime(CLOCK_MONOTONIC) on Linux,
@@ -245,7 +245,7 @@ fn main() -> int32 {
   w.auth = "Bearer good";
   var st: int32 = wire_run(w, body);
   check_int("GET /ok -> 200", (int64)st, 200);
-  check_eq("GET /ok body", raize_buf_str(body), "ok\n");
+  check_eq("GET /ok body", rz_buf_str(body), "ok\n");
   check_int("GET /ok reached the terminal once", (int64)g_next_calls, 1);
   var ls: RzLogStats = rz_log_stats(log);
   check_int("logging: one line written", (int64)ls.lines, 1);
@@ -256,13 +256,13 @@ fn main() -> int32 {
   w.path = "/secret";
   st = wire_run(w, body);
   check_int("GET /secret without a token -> 401", (int64)st, 401);
-  check_eq("401 body is generic", raize_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
+  check_eq("401 body is generic", rz_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
   w = wire_req_new();
   w.path = "/secret";
   w.auth = "Bearer good";
   st = wire_run(w, body);
   check_int("GET /secret with a valid token -> 200", (int64)st, 200);
-  check_eq("authorised body", raize_buf_str(body), "secret\n");
+  check_eq("authorised body", rz_buf_str(body), "secret\n");
   // the verifier is taken through a function pointer installed by this module:
   // if the hook signature regressed, this is where it would die.
 
@@ -282,9 +282,9 @@ fn main() -> int32 {
   w.auth = "Bearer good";
   st = wire_run(w, body);
   check_int("GET /boom -> 500", (int64)st, 500);
-  check_eq("500 body is the generic one", raize_buf_str(body), RZ_RECOVER_GENERIC_BODY);
+  check_eq("500 body is the generic one", rz_buf_str(body), RZ_RECOVER_GENERIC_BODY);
   check("500 body does not contain the handler's detail",
-        !raize_str_contains(raize_buf_str(body), "hunter2"));
+        !rz_str_contains(rz_buf_str(body), "hunter2"));
   var rs: RzRecoverStats = rz_recover_stats(rec);
   check_int("recovery: one failure handled", (int64)rs.handled, 1);
 
@@ -295,7 +295,7 @@ fn main() -> int32 {
   st = wire_run(w, body);
   check_int("handler trying to set a CRLF header is refused, request survives",
             (int64)st, 200);
-  check_eq("refused value never reached the table", raize_buf_str(body), "refused\n");
+  check_eq("refused value never reached the table", rz_buf_str(body), "refused\n");
 
   // ---- auth failure is not a 500; a verifier bug is ------------------------
   // (the 403 arm is exercised in auth.mettle's unit tests; here the point is
@@ -305,7 +305,7 @@ fn main() -> int32 {
   w.auth = "Bearer wrong";
   st = wire_run(w, body);
   check_int("wrong token -> 401 (not rewritten to 500 by recovery)", (int64)st, 401);
-  check_eq("401 keeps its own body", raize_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
+  check_eq("401 keeps its own body", rz_buf_str(body), RZ_AUTH_BODY_UNAUTHORIZED);
 
   // a verifier bug returns 999: 500, and the client sees the generic body
   rc0 = rz_auth_set_verifier(authn, &wire_verify_bug);
@@ -314,7 +314,7 @@ fn main() -> int32 {
   w.auth = "Bearer good";
   st = wire_run(w, body);
   check_int("verifier bug -> 500", (int64)st, 500);
-  check_eq("verifier bug body is recovered", raize_buf_str(body), RZ_RECOVER_GENERIC_BODY);
+  check_eq("verifier bug body is recovered", rz_buf_str(body), RZ_RECOVER_GENERIC_BODY);
   var bs: RzAuthStats = rz_auth_stats(authn);
   check_int("auth: verifier bug counted", (int64)bs.verifier_bug, 1);
 

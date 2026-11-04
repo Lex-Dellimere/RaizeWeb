@@ -18,7 +18,7 @@ fn main() -> int32 {
   req.headers[0].name = "Authorization";
   req.headers[0].value = "Bearer abc";
   req.header_count = 1;
-  var tok: string = raize_str_empty();
+  var tok: string = rz_str_empty();
   var found: int32 = rz_auth_bearer_token(&req, &tok);
   println("scheme=[{RZ_AUTH_SCHEME_BEARER}] token=[{tok}] found={found}");
   // and the hook types still line up for an app that installs its own verifier

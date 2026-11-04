@@ -78,7 +78,7 @@ fn rz_html_list_free(l: RzHtmlList*) {
 }
 
 fn rz_html_slot_clear(s: RzHtmlSlot*) {
-  if (s->kind == RZ_SLOT_TEXT) { raize_str_free(s->text); }
+  if (s->kind == RZ_SLOT_TEXT) { rz_str_free(s->text); }
   if (s->kind == RZ_SLOT_NODE) { rz_html_free(s->node); }
   if (s->kind == RZ_SLOT_LIST) { rz_html_list_free(s->list); }
   memset((rawptr)s, 0, sizeof(RzHtmlSlot));
@@ -107,10 +107,10 @@ fn rz_html_slot(h: RzHtml*, i: int32) -> RzHtmlSlot* {
 export fn rz_html_put_text(h: RzHtml*, i: int32, s: string) {
   var slot: RzHtmlSlot* = rz_html_slot(h, i);
   if (slot == 0) { return; }
-  var b: RaizeBuf* = raize_buf_new_cap((int64)s.length + 16);
+  var b: RzBuf* = rz_buf_new_cap((int64)s.length + 16);
   rz_html_escape(b, s);
   slot->kind = RZ_SLOT_TEXT;
-  slot->text = raize_buf_take(b);
+  slot->text = rz_buf_take(b);
 }
 
 // Slot i gets `s` as is. The only way to insert unescaped markup.
@@ -118,7 +118,7 @@ export fn rz_html_put_raw(h: RzHtml*, i: int32, s: string) {
   var slot: RzHtmlSlot* = rz_html_slot(h, i);
   if (slot == 0) { return; }
   slot->kind = RZ_SLOT_TEXT;
-  slot->text = raize_str_dup(s);
+  slot->text = rz_str_dup(s);
 }
 
 // Slot i gets a child node (owned from now on). A null child is empty.
@@ -177,13 +177,13 @@ impl RzHtmlPut for string {
 impl RzHtmlPut for int32 {
   fn rz_put_into(self: Self, h: RzHtml*, i: int32) {
     var b: uint8[24];
-    rz_html_put_raw(h, i, raize_int_buf((int64)self, &b[0], 24));
+    rz_html_put_raw(h, i, rz_int_buf((int64)self, &b[0], 24));
   }
 }
 impl RzHtmlPut for int64 {
   fn rz_put_into(self: Self, h: RzHtml*, i: int32) {
     var b: uint8[24];
-    rz_html_put_raw(h, i, raize_int_buf(self, &b[0], 24));
+    rz_html_put_raw(h, i, rz_int_buf(self, &b[0], 24));
   }
 }
 impl RzHtmlPut for bool {

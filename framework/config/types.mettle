@@ -323,7 +323,7 @@ export fn rz_cfg_err_add(e: RzConfigErrors*, i: int32, s: string) {
 
 export fn rz_cfg_err_add_int(e: RzConfigErrors*, i: int32, n: int64) {
   var tmp: uint8[24];
-  var s: string = raize_int_buf(n, &tmp[0], 24);
+  var s: string = rz_int_buf(n, &tmp[0], 24);
   rz_cfg_err_add(e, i, s);
 }
 

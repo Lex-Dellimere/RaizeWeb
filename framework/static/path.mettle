@@ -100,6 +100,6 @@ export fn rz_static_within(root: string, resolved: string) -> bool {
     return n > 1 && resolved.chars[0] == 47;
   }
   if (n <= rn) { return false; }
-  if (!raize_str_eq(raize_str_sub(resolved, 0, rn), root)) { return false; }
+  if (!rz_str_eq(rz_str_sub(resolved, 0, rn), root)) { return false; }
   return resolved.chars[rn] == 47;
 }

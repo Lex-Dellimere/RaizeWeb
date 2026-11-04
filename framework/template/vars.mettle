@@ -7,7 +7,7 @@
 // Lifetime: the map *borrows* every name and value. It does not copy, so a
 // value may be a view into the request arena for the duration of one handler
 // call. If a map must outlive its source bytes (a startup default set, say),
-// the caller keeps the literals alive or copies with raize_str_dup.
+// the caller keeps the literals alive or copies with rz_str_dup.
 //
 // Lookup is a linear scan. At 32 entries that is fewer comparisons than a hash
 // would cost in setup, and it keeps the type allocation-free: an RzVarMap is
@@ -43,7 +43,7 @@ export fn rz_vars_set(m: RzVarMap*, name: string, value: string) -> int32 {
   if (n > RZ_TEMPLATE_MAX_NAME) { return -1; }
   var i: int32 = 0;
   while (i < m->count) {
-    if (raize_str_eq(m->items[i].name, name)) {
+    if (rz_str_eq(m->items[i].name, name)) {
       m->items[i].value = value;
       return 0;
     }
@@ -62,22 +62,22 @@ export fn rz_vars_set(m: RzVarMap*, name: string, value: string) -> int32 {
 // both make a section false. The startup check (compile.mettle) is what tells
 // a wiring mistake apart from an intentional empty value.
 export fn rz_vars_get(m: RzVarMap*, name: string) -> string {
-  if (m == 0) { return raize_str_empty(); }
+  if (m == 0) { return rz_str_empty(); }
   var i: int32 = 0;
   while (i < m->count) {
-    if (raize_str_eq(m->items[i].name, name)) {
+    if (rz_str_eq(m->items[i].name, name)) {
       return m->items[i].value;
     }
     i = i + 1;
   }
-  return raize_str_empty();
+  return rz_str_empty();
 }
 
 export fn rz_vars_has(m: RzVarMap*, name: string) -> bool {
   if (m == 0) { return false; }
   var i: int32 = 0;
   while (i < m->count) {
-    if (raize_str_eq(m->items[i].name, name)) { return true; }
+    if (rz_str_eq(m->items[i].name, name)) { return true; }
     i = i + 1;
   }
   return false;

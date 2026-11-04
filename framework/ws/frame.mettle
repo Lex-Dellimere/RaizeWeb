@@ -176,13 +176,13 @@ export fn rz_ws_frame_head(fin: bool, opcode: int32, len: int64, out: uint8*, ca
 }
 
 // Appends one complete, unfragmented server frame to `b`.
-export fn rz_ws_frame_append(b: RaizeBuf*, opcode: int32, payload: string) -> int64 {
+export fn rz_ws_frame_append(b: RzBuf*, opcode: int32, payload: string) -> int64 {
   if (b == 0) { return -1; }
   var head: uint8[16];
   var h: int64 = rz_ws_frame_head(true, opcode, (int64)payload.length, &head[0], 16);
   if (h < 0) { return -1; }
-  raize_buf_add_bytes(b, &head[0], h);
-  raize_buf_add(b, payload);
+  rz_buf_add_bytes(b, &head[0], h);
+  rz_buf_add(b, payload);
   return h + (int64)payload.length;
 }
 
@@ -207,12 +207,12 @@ export fn rz_ws_close_code(p: uint8*, n: int64) -> int32 {
 
 // Appends a close frame carrying `code` and a reason (truncated so the
 // payload stays within 125 bytes).
-export fn rz_ws_close_append(b: RaizeBuf*, code: int32, reason: string) -> int64 {
+export fn rz_ws_close_append(b: RzBuf*, code: int32, reason: string) -> int64 {
   var payload: uint8[125];
   payload[0] = (uint8)((code >> 8) & 255);
   payload[1] = (uint8)(code & 255);
   var rn: int64 = (int64)reason.length;
   if (rn > 123) { rn = 123; }
   if (rn > 0) { memcpy((rawptr)&payload[2], (rawptr)reason.chars, rn); }
-  return rz_ws_frame_append(b, RZ_WS_OP_CLOSE, raize_str_view(&payload[0], rn + 2));
+  return rz_ws_frame_append(b, RZ_WS_OP_CLOSE, rz_str_view(&payload[0], rn + 2));
 }

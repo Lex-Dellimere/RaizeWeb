@@ -23,8 +23,8 @@ import "trie";
 fn rz_path_join(prefix: string, path: string) -> string {
   var pn: int64 = (int64)prefix.length;
   var sn: int64 = (int64)path.length;
-  if (pn == 0) { return raize_str_dup(path); }
-  if (sn == 0) { return raize_str_dup(prefix); }
+  if (pn == 0) { return rz_str_dup(path); }
+  if (sn == 0) { return rz_str_dup(prefix); }
   var p_end: bool = prefix.chars[pn - 1] == 47;
   var s_start: bool = path.chars[0] == 47;
   var skip: int64 = 0;
@@ -37,7 +37,7 @@ fn rz_path_join(prefix: string, path: string) -> string {
   var extra: int64 = 0;
   if (sep) { extra = 1; }
   var out: uint8* = (uint8*)malloc(pn + sn - skip + extra + 1);
-  if (out == 0) { return raize_str_empty(); }
+  if (out == 0) { return rz_str_empty(); }
   var o: int64 = 0;
   var i: int64 = 0;
   while (i < pn) {
@@ -56,7 +56,7 @@ fn rz_path_join(prefix: string, path: string) -> string {
     i = i + 1;
   }
   out[o] = 0;
-  return raize_str_view(out, o);
+  return rz_str_view(out, o);
 }
 
 // A registration handle for a prefix. Capacity RZ_MAX_GROUPS; 0 means the
@@ -65,7 +65,7 @@ export fn rz_router_group(rt: RzRouter*, prefix: string) -> RzGroup* {
   if (rt == 0) { return 0; }
   var pn: int64 = (int64)prefix.length;
   if (pn > 0 && prefix.chars[0] != 47) {
-    rt->last_error = RZ_E_PATTERN;
+    rt->last_error = RZ_ROUTER_E_PATTERN;
     return 0;
   }
   // Slots are handed out once and never reused: a stale RzGroup* must stay
@@ -73,13 +73,13 @@ export fn rz_router_group(rt: RzRouter*, prefix: string) -> RzGroup* {
   // handle. The routing table is static, so a group per process is enough.
   var slot: int32 = rt->group_used;
   if (slot >= RZ_MAX_GROUPS) {
-    rt->last_error = RZ_E_CAPACITY;
+    rt->last_error = RZ_ROUTER_E_CAPACITY;
     return 0;
   }
   rt->group_used = slot + 1;
-  var owned: string = raize_str_empty();
+  var owned: string = rz_str_empty();
   if (!rz_arena_dup(rt, prefix, &owned)) {
-    rt->last_error = RZ_E_CAPACITY;
+    rt->last_error = RZ_ROUTER_E_CAPACITY;
     return 0;
   }
   var g: RzGroup* = &rt->groups[slot];
@@ -93,14 +93,14 @@ export fn rz_router_group(rt: RzRouter*, prefix: string) -> RzGroup* {
 export fn rz_group_end(g: RzGroup*) {
   if (g == 0 || !g->live) { return; }
   g->live = false;
-  g->prefix = raize_str_empty();
+  g->prefix = rz_str_empty();
   g->rt = 0;
 }
 
 export fn rz_group_add(g: RzGroup*, verb: string, path: string, h: fn(RzContext*) -> int32) -> int32 {
-  if (g == 0 || g->rt == 0 || !g->live) { return RZ_E_PATTERN; }
+  if (g == 0 || g->rt == 0 || !g->live) { return RZ_E_USAGE; }
   var joined: string = rz_path_join(g->prefix, path);
-  if ((int64)joined.length == 0 && (int64)path.length > 0) { return RZ_E_CAPACITY; }
-  defer raize_str_free(joined);
+  if ((int64)joined.length == 0 && (int64)path.length > 0) { return RZ_E_FULL; }
+  defer rz_str_free(joined);
   return rz_router_add(g->rt, verb, joined, h);
 }

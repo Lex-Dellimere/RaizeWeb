@@ -273,7 +273,7 @@ fn rz_auth_deny(ctx: RzContext*, a: RzAuth*, status: int32, has_token: bool) -> 
     var ch: uint8[128];
     var cn: int64 = rz_auth_challenge(a, has_token, forbidden, &ch[0], 128);
     if (cn > 0) {
-      var v: string = raize_str_view(&ch[0], cn);
+      var v: string = rz_str_view(&ch[0], cn);
       var rc: int32 = rz_hdr_set(ctx->resp, "WWW-Authenticate", v);
       if (rc != RZ_HDR_OK) { atomic_inc_i32(&a->stats.header_rejected); }
     } else {
@@ -304,10 +304,10 @@ export fn rz_mw_auth(ctx: RzContext*, next: fn(RzContext*) -> int32) -> int32 {
     atomic_inc_i32(&a->stats.duplicate_credentials);
     return rz_auth_deny(ctx, a, 401, false);
   }
-  var token: string = raize_str_empty();
+  var token: string = rz_str_empty();
   if (a->extract != 0) {
     var found: int32 = a->extract(req, &token);
-    if (found != 1) { token = raize_str_empty(); }
+    if (found != 1) { token = rz_str_empty(); }
   }
   var principal: rawptr = 0;
   var verdict: int32 = RZ_AUTH_DENY;
@@ -369,7 +369,7 @@ fn t_auth_term(ctx: RzContext*) -> int32 {
 
 fn t_auth_ok_verify(ctx: RzContext*, token: string*, principal: rawptr*) -> int32 {
   if (token == 0) { return 401; }
-  if (!raize_str_eq(*token, "good")) { return 401; }
+  if (!rz_str_eq(*token, "good")) { return 401; }
   if (principal != 0) { *principal = (rawptr)ctx; }
   return 200;
 }
@@ -397,11 +397,11 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   defer rz_auth_free(a);
   var out: uint8[128];
   var n: int64 = rz_auth_challenge(a, false, false, &out[0], 128);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "Bearer realm=\"raize\"")) { return 2; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "Bearer realm=\"raize\"")) { return 2; }
   n = rz_auth_challenge(a, true, false, &out[0], 128);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "Bearer realm=\"raize\", error=\"invalid_token\"")) { return 3; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "Bearer realm=\"raize\", error=\"invalid_token\"")) { return 3; }
   n = rz_auth_challenge(a, true, true, &out[0], 128);
-  if (!raize_str_eq(raize_str_view(&out[0], n), "Bearer realm=\"raize\", error=\"insufficient_scope\"")) { return 4; }
+  if (!rz_str_eq(rz_str_view(&out[0], n), "Bearer realm=\"raize\", error=\"insufficient_scope\"")) { return 4; }
   // a buffer that cannot hold the value produces nothing, never a partial one
   if (rz_auth_challenge(a, false, false, &out[0], 8) != 0) { return 5; }
   return 0;
@@ -419,7 +419,7 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   var long: uint8[80];
   var i: int64 = 0;
   while (i < 80) { long[i] = 65; i = i + 1; }
-  if (rz_auth_set_realm(a, raize_str_view(&long[0], 80)) != -2) { return 7; }
+  if (rz_auth_set_realm(a, rz_str_view(&long[0], 80)) != -2) { return 7; }
   if (rz_auth_validate(a) != 0) { return 8; }
   if (rz_auth_set_scheme(a, "Bearer 2") != -1) { return 9; }   // not a token
   return 0;
@@ -454,8 +454,8 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   if (rz_mw_auth(&ctx, &t_auth_term) != 0) { return 6; }
   if (!ctx.aborted) { return 7; }
   if (resp->status != 401) { return 8; }
-  if (!raize_str_eq(raize_buf_str(resp->body), RZ_AUTH_BODY_UNAUTHORIZED)) { return 9; }
-  if (!raize_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\"")) { return 10; }
+  if (!rz_str_eq(rz_buf_str(resp->body), RZ_AUTH_BODY_UNAUTHORIZED)) { return 9; }
+  if (!rz_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\"")) { return 10; }
   var st: RzAuthStats = rz_auth_stats(a);
   if (st.entered != 1) { return 11; }
   if (st.unauthorized != 1) { return 12; }
@@ -481,7 +481,7 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   t_auth_add_header(&req, "Authorization", "Bearer good");
   if (rz_mw_auth(&ctx, &t_auth_term) != 200) { return 7; }
   if (ctx.aborted) { return 8; }
-  if (!raize_str_eq(raize_buf_str(resp->body), "T")) { return 9; }
+  if (!rz_str_eq(rz_buf_str(resp->body), "T")) { return 9; }
   if (ctx.user != (rawptr)&ctx) { return 10; }        // principal handed to the app
   if (rz_hdr_get(resp, "WWW-Authenticate").length != 0) { return 11; }
   var st: RzAuthStats = rz_auth_stats(a);
@@ -491,7 +491,7 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   req.headers[0].value = "Bearer bad";
   if (rz_mw_auth(&ctx, &t_auth_term) != 0) { return 13; }
   if (resp->status != 401) { return 14; }
-  if (!raize_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\", error=\"invalid_token\"")) { return 15; }
+  if (!rz_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\", error=\"invalid_token\"")) { return 15; }
   return 0;
 }
 
@@ -514,8 +514,8 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   t_auth_add_header(&req, "Authorization", "Bearer good");
   if (rz_mw_auth(&ctx, &t_auth_term) != 0) { return 7; }
   if (resp->status != 403) { return 8; }
-  if (!raize_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\", error=\"insufficient_scope\"")) { return 9; }
-  if (!raize_str_eq(raize_buf_str(resp->body), RZ_AUTH_BODY_FORBIDDEN)) { return 10; }
+  if (!rz_str_eq(rz_hdr_get(resp, "WWW-Authenticate"), "Bearer realm=\"raize\", error=\"insufficient_scope\"")) { return 9; }
+  if (!rz_str_eq(rz_buf_str(resp->body), RZ_AUTH_BODY_FORBIDDEN)) { return 10; }
   // two Authorization headers is malformed (RFC 7235): refuse, do not pick one
   resp->header_count = 0;
   ctx.aborted = false;
@@ -549,7 +549,7 @@ fn t_auth_key_extract(req: RzRequest*, out: string*) -> int32 {
   if (ctx.aborted) { return 8; }
   if (resp->status != 500) { return 9; }
   if (rz_hdr_get(resp, "WWW-Authenticate").length != 0) { return 10; }
-  if (!raize_str_eq(raize_buf_str(resp->body), RZ_AUTH_BODY_VERIFIER)) { return 11; }
+  if (!rz_str_eq(rz_buf_str(resp->body), RZ_AUTH_BODY_VERIFIER)) { return 11; }
   var st: RzAuthStats = rz_auth_stats(a);
   if (st.verifier_bug != 1) { return 12; }
   return 0;

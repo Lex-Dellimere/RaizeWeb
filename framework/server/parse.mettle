@@ -136,7 +136,7 @@ fn rz_parse_content_length(v: string) -> int64 {
 
 fn rz_parse_version_ok(v: string) -> bool {
   if (v.length != 8) { return false; }
-  if (!raize_str_eq(raize_str_sub(v, 0, 7), "HTTP/1.")) { return false; }
+  if (!rz_str_eq(rz_str_sub(v, 0, 7), "HTTP/1.")) { return false; }
   var c: int32 = (int32)v.chars[7];
   return c == 48 || c == 49;
 }
@@ -178,9 +178,9 @@ export fn rz_parse(buf: uint8*, len: int64, out: RzRequest*, arena: RzArena*) ->
     i = i + 1;
   }
   if (sp1 <= 0 || sp2 <= sp1 + 1) { return RZ_PARSE_MALFORMED; }
-  var verb: string = raize_str_view(buf, sp1);
-  var target: string = raize_str_view(buf + sp1 + 1, sp2 - sp1 - 1);
-  var version: string = raize_str_view(buf + sp2 + 1, line_end - sp2 - 1);
+  var verb: string = rz_str_view(buf, sp1);
+  var target: string = rz_str_view(buf + sp1 + 1, sp2 - sp1 - 1);
+  var version: string = rz_str_view(buf + sp2 + 1, line_end - sp2 - 1);
   if ((int64)verb.length > (int64)RZ_MAX_METHOD) { return RZ_PARSE_MALFORMED; }
   if (!rz_header_name_ok(verb)) { return RZ_PARSE_MALFORMED; }   // methods are tokens
   if (target.length == 0 || (int64)target.length > RZ_MAX_TARGET) { return RZ_PARSE_LIMIT_TARGET; }
@@ -204,8 +204,8 @@ export fn rz_parse(buf: uint8*, len: int64, out: RzRequest*, arena: RzArena*) ->
       k = k + 1;
     }
     if (colon <= i) { return RZ_PARSE_MALFORMED; }
-    var raw_name: string = raize_str_view(buf + i, colon - i);
-    var raw_value: string = raize_str_view(buf + colon + 1, end - colon - 1);
+    var raw_name: string = rz_str_view(buf + i, colon - i);
+    var raw_value: string = rz_str_view(buf + colon + 1, end - colon - 1);
     if (!rz_header_name_ok(raw_name)) { return RZ_PARSE_MALFORMED; }
     if (!rz_header_value_ok(raw_value)) { return RZ_PARSE_MALFORMED; }
     if (out->header_count >= RZ_MAX_HEADERS) { return RZ_PARSE_LIMIT_HEADERS; }
@@ -253,17 +253,17 @@ export fn rz_parse(buf: uint8*, len: int64, out: RzRequest*, arena: RzArena*) ->
 
   var expect_value: string = rz_header_get(out->headers, out->header_count, "expect");
   if (expect_value.length > 0) {
-    if (!raize_str_eq_ci(expect_value, "100-continue")) { return RZ_PARSE_MALFORMED; }
+    if (!rz_str_eq_ci(expect_value, "100-continue")) { return RZ_PARSE_MALFORMED; }
   }
 
   // --- 5. target, path, query -----------------------------------------------
   var raw_path: string = target;
-  var query: string = raize_str_empty();
-  if (!raize_str_eq(target, "*")) {
-    var qmark: int64 = raize_str_find_byte(target, 63);
+  var query: string = rz_str_empty();
+  if (!rz_str_eq(target, "*")) {
+    var qmark: int64 = rz_str_find_byte(target, 63);
     if (qmark >= 0) {
-      raw_path = raize_str_sub(target, 0, qmark);
-      query = raize_str_from(target, qmark + 1);
+      raw_path = rz_str_sub(target, 0, qmark);
+      query = rz_str_from(target, qmark + 1);
     }
     if (raw_path.length == 0) { return RZ_PARSE_MALFORMED; }
     var path: string = rz_path_normalize(raw_path, arena);
@@ -273,7 +273,7 @@ export fn rz_parse(buf: uint8*, len: int64, out: RzRequest*, arena: RzArena*) ->
   } else {
     if (!rz_req_verb_is(out, "OPTIONS")) { return RZ_PARSE_MALFORMED; }
     out->path = "*";
-    out->query = raize_str_empty();
+    out->query = rz_str_empty();
   }
 
   // --- 6. body --------------------------------------------------------------
@@ -283,9 +283,9 @@ export fn rz_parse(buf: uint8*, len: int64, out: RzRequest*, arena: RzArena*) ->
     return RZ_PARSE_NEED_MORE;
   }
   if (body_len > 0) {
-    out->body = raize_str_view(buf + out->head_len, body_len);
+    out->body = rz_str_view(buf + out->head_len, body_len);
   } else {
-    out->body = raize_str_empty();
+    out->body = rz_str_empty();
   }
   return RZ_PARSE_COMPLETE;
 }
@@ -365,15 +365,15 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
   var n: int64 = rz_test_bytes("GET /a/b?x=1 HTTP/1.1\r\nHost: t\r\nX-A: v\r\n\r\n", &buf[0], cap);
   var req: RzRequest;
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 2; }
-  if (!raize_str_eq(req.verb, "GET")) { rz_arena_free(arena); return 3; }
-  if (!raize_str_eq(req.path, "/a/b")) { rz_arena_free(arena); return 4; }
-  if (!raize_str_eq(req.query, "x=1")) { rz_arena_free(arena); return 5; }
+  if (!rz_str_eq(req.verb, "GET")) { rz_arena_free(arena); return 3; }
+  if (!rz_str_eq(req.path, "/a/b")) { rz_arena_free(arena); return 4; }
+  if (!rz_str_eq(req.query, "x=1")) { rz_arena_free(arena); return 5; }
   if (req.header_count != 2) { rz_arena_free(arena); return 6; }
   if (req.body_len != 0) { rz_arena_free(arena); return 7; }
   if (!req.keepalive) { rz_arena_free(arena); return 8; }
   if (req.version_minor != 1) { rz_arena_free(arena); return 9; }
   if (req.head_len != n) { rz_arena_free(arena); return 10; }
-  if (!raize_str_eq(rz_req_header(&req, "host"), "t")) { rz_arena_free(arena); return 11; }
+  if (!rz_str_eq(rz_req_header(&req, "host"), "t")) { rz_arena_free(arena); return 11; }
 
   // 2: partial head -> NEED_MORE
   n = rz_test_bytes("GET / HTTP/1.1\r\nHost: t\r\n", &buf[0], cap);
@@ -388,14 +388,14 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
   // 4: ... and complete once the body arrives
   n = rz_test_bytes("POST /x HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", &buf[0], cap);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 16; }
-  if (!raize_str_eq(req.body, "hello")) { rz_arena_free(arena); return 17; }
+  if (!rz_str_eq(req.body, "hello")) { rz_arena_free(arena); return 17; }
   if (req.body_len != 5) { rz_arena_free(arena); return 18; }
 
   // 5: body longer than the head buffer is still COMPLETE when all bytes are
   //    present (the connection loop decides where to put it)
   n = rz_test_bytes("POST /x HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabcGET / HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], cap);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 19; }
-  if (!raize_str_eq(req.body, "abc")) { rz_arena_free(arena); return 20; }
+  if (!rz_str_eq(req.body, "abc")) { rz_arena_free(arena); return 20; }
 
   rz_arena_free(arena);
   return 0;
@@ -538,7 +538,7 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
 
   n = rz_test_bytes("GET / HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\nhi", &buf[0], 4096);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 11; }
-  if (!raize_str_eq(rz_req_header(&req, "expect"), "100-continue")) { rz_arena_free(arena); return 12; }
+  if (!rz_str_eq(rz_req_header(&req, "expect"), "100-continue")) { rz_arena_free(arena); return 12; }
 
   n = rz_test_bytes("GET / HTTP/1.1\r\nHost: t\r\nExpect: something\r\n\r\n", &buf[0], 4096);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_MALFORMED) { rz_arena_free(arena); return 13; }
@@ -546,7 +546,7 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
   // OPTIONS * is allowed; * with another verb is not
   n = rz_test_bytes("OPTIONS * HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], 4096);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 14; }
-  if (!raize_str_eq(req.path, "*")) { rz_arena_free(arena); return 15; }
+  if (!rz_str_eq(req.path, "*")) { rz_arena_free(arena); return 15; }
   n = rz_test_bytes("GET * HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], 4096);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_MALFORMED) { rz_arena_free(arena); return 16; }
 
@@ -557,8 +557,8 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_MALFORMED) { rz_arena_free(arena); return 18; }
   n = rz_test_bytes("GET /a/./b/%2e%2e/c?q=1 HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], 4096);
   if (rz_parse(&buf[0], n, &req, arena) != RZ_PARSE_COMPLETE) { rz_arena_free(arena); return 19; }
-  if (!raize_str_eq(req.path, "/a/c")) { rz_arena_free(arena); return 20; }
-  if (!raize_str_eq(req.query, "q=1")) { rz_arena_free(arena); return 21; }
+  if (!rz_str_eq(req.path, "/a/c")) { rz_arena_free(arena); return 20; }
+  if (!rz_str_eq(req.query, "q=1")) { rz_arena_free(arena); return 21; }
 
   // method token rules
   n = rz_test_bytes("G T / HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], 4096);
@@ -638,7 +638,7 @@ fn rz_run_case(c: RzParseCase, arena: RzArena*, scratch: uint8*, cap: int64) -> 
   var n: int64 = rz_test_bytes("GET /pure HTTP/1.1\r\nHost: t\r\n\r\n", &buf[0], 256);
   var req: RzRequest;
   if (rz_parse_pure(&buf[0], n, &req) != RZ_PARSE_COMPLETE) { rz_parse_pure_free(); return 1; }
-  if (!raize_str_eq(req.path, "/pure")) { rz_parse_pure_free(); return 2; }
+  if (!rz_str_eq(req.path, "/pure")) { rz_parse_pure_free(); return 2; }
   // the scratch arena is reused, so a second call is still cheap and correct
   var req2: RzRequest;
   if (rz_parse_pure(&buf[0], n, &req2) != RZ_PARSE_COMPLETE) { rz_parse_pure_free(); return 3; }

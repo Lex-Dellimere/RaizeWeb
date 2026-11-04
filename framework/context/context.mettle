@@ -43,7 +43,7 @@ export struct RzContext {
   req: RzRequest*;
   resp: RzResponse*;
   arena: RzArena*;
-  store: rawptr;          // framework/orm's RaizeStore*, typed there
+  store: rawptr;          // framework/orm's RzStore*, typed there
   user: rawptr;           // auth middleware's principal, typed there
   status: int32;          // set by the handler, read by the log frame
   bytes_written: int64;   // set by the server after the write
@@ -77,40 +77,51 @@ fn rz_ctx_mark(ctx: RzContext*, status: int32) {
   ctx->status = status;
 }
 
+// Every response helper returns the HTTP status it set, so a handler can end
+// with `return rz_ctx_text(ctx, 404, "...");`. With no context or response
+// there is nothing to set and the helpers return 500. A response that cannot
+// be built (rz_ctx_redirect with the header table full) becomes an empty 500.
+fn rz_ctx_done(ctx: RzContext*, status: int32, rc: int32) -> int32 {
+  if (rc == 0) { return status; }
+  rz_ctx_mark(ctx, 500);
+  rz_resp_empty(ctx->resp, 500);
+  return 500;
+}
+
 export fn rz_ctx_text(ctx: RzContext*, status: int32, body: string) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_text(ctx->resp, status, body);
+  return rz_ctx_done(ctx, status, rz_resp_text(ctx->resp, status, body));
 }
 
 export fn rz_ctx_html(ctx: RzContext*, status: int32, body: string) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_html(ctx->resp, status, body);
+  return rz_ctx_done(ctx, status, rz_resp_html(ctx->resp, status, body));
 }
 
 export fn rz_ctx_json(ctx: RzContext*, status: int32, body: string) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_json(ctx->resp, status, body);
+  return rz_ctx_done(ctx, status, rz_resp_json(ctx->resp, status, body));
 }
 
 export fn rz_ctx_bytes(ctx: RzContext*, status: int32, ct: string, body: string) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_bytes(ctx->resp, status, ct, body);
+  return rz_ctx_done(ctx, status, rz_resp_bytes(ctx->resp, status, ct, body));
 }
 
 export fn rz_ctx_empty(ctx: RzContext*, status: int32) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_empty(ctx->resp, status);
+  return rz_ctx_done(ctx, status, rz_resp_empty(ctx->resp, status));
 }
 
 export fn rz_ctx_redirect(ctx: RzContext*, status: int32, location: string) -> int32 {
-  if (ctx == 0 || ctx->resp == 0) { return -1; }
+  if (ctx == 0 || ctx->resp == 0) { return 500; }
   rz_ctx_mark(ctx, status);
-  return rz_resp_redirect(ctx->resp, status, location);
+  return rz_ctx_done(ctx, status, rz_resp_redirect(ctx->resp, status, location));
 }
 
 export fn rz_ctx_not_found(ctx: RzContext*) -> int32 {
@@ -118,13 +129,14 @@ export fn rz_ctx_not_found(ctx: RzContext*) -> int32 {
 }
 
 // A middleware refuses by aborting: the server sees `aborted` and skips the
-// handler, but still writes whatever response was built.
+// handler, but still writes whatever response was built. Returns `status`
+// (500 with no context).
 export fn rz_ctx_abort(ctx: RzContext*, status: int32) -> int32 {
-  if (ctx == 0) { return -1; }
+  if (ctx == 0) { return 500; }
   ctx->aborted = true;
   rz_ctx_mark(ctx, status);
   if (ctx->resp != 0) { ctx->resp->status = status; }
-  return 0;
+  return status;
 }
 
 export fn rz_ctx_is_json(ctx: RzContext*) -> bool {
@@ -134,7 +146,7 @@ export fn rz_ctx_is_json(ctx: RzContext*) -> bool {
 
 // Convenience over the query accessors; the arena is the context's.
 export fn rz_ctx_query(ctx: RzContext*, name: string) -> string {
-  if (ctx == 0 || ctx->req == 0) { return raize_str_empty(); }
+  if (ctx == 0 || ctx->req == 0) { return rz_str_empty(); }
   return rz_query_get(ctx->req->query, name, ctx->arena);
 }
 
@@ -142,7 +154,7 @@ export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   if (ctx == 0 || ctx->req == 0) { return false; }
   var v: string = rz_query_get(ctx->req->query, name, ctx->arena);
   if (v.length == 0) { return false; }
-  var n: int64 = raize_str_to_int(v);
+  var n: int64 = rz_str_to_int(v);
   *out = n;
   return true;
 }
@@ -164,19 +176,19 @@ export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   if (resp->arena != arena) { rz_response_free(resp); rz_arena_free(arena); return 5; }
   if (ctx.status != 0) { rz_response_free(resp); rz_arena_free(arena); return 6; }
 
-  if (rz_ctx_text(&ctx, 201, "made") != 0) { rz_response_free(resp); rz_arena_free(arena); return 7; }
+  if (rz_ctx_text(&ctx, 201, "made") != 201) { rz_response_free(resp); rz_arena_free(arena); return 7; }
   if (resp->status != 201) { rz_response_free(resp); rz_arena_free(arena); return 8; }
   if (ctx.status != 201) { rz_response_free(resp); rz_arena_free(arena); return 9; }
   if (rz_resp_body_len(resp) != 4) { rz_response_free(resp); rz_arena_free(arena); return 10; }
-  if (!raize_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_TEXT)) { rz_response_free(resp); rz_arena_free(arena); return 11; }
+  if (!rz_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_TEXT)) { rz_response_free(resp); rz_arena_free(arena); return 11; }
 
-  if (rz_ctx_json(&ctx, 200, "[]") != 0) { rz_response_free(resp); rz_arena_free(arena); return 12; }
-  if (!raize_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_JSON)) { rz_response_free(resp); rz_arena_free(arena); return 13; }
+  if (rz_ctx_json(&ctx, 200, "[]") != 200) { rz_response_free(resp); rz_arena_free(arena); return 12; }
+  if (!rz_str_eq(rz_resp_header_get(resp, "content-type"), RZ_CT_JSON)) { rz_response_free(resp); rz_arena_free(arena); return 13; }
 
-  if (rz_ctx_not_found(&ctx) != 0) { rz_response_free(resp); rz_arena_free(arena); return 14; }
+  if (rz_ctx_not_found(&ctx) != 404) { rz_response_free(resp); rz_arena_free(arena); return 14; }
   if (resp->status != 404) { rz_response_free(resp); rz_arena_free(arena); return 15; }
 
-  if (rz_ctx_abort(&ctx, 403) != 0) { rz_response_free(resp); rz_arena_free(arena); return 16; }
+  if (rz_ctx_abort(&ctx, 403) != 403) { rz_response_free(resp); rz_arena_free(arena); return 16; }
   if (!ctx.aborted) { rz_response_free(resp); rz_arena_free(arena); return 17; }
   if (resp->status != 403) { rz_response_free(resp); rz_arena_free(arena); return 18; }
 
@@ -185,7 +197,7 @@ export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   var limit: int64 = 0;
   if (!rz_ctx_query_int(&ctx, "limit", &limit)) { rz_response_free(resp); rz_arena_free(arena); return 19; }
   if (limit != 25) { rz_response_free(resp); rz_arena_free(arena); return 20; }
-  if (!raize_str_eq(rz_ctx_query(&ctx, "q"), "hi there")) { rz_response_free(resp); rz_arena_free(arena); return 21; }
+  if (!rz_str_eq(rz_ctx_query(&ctx, "q"), "hi there")) { rz_response_free(resp); rz_arena_free(arena); return 21; }
 
   rz_response_free(resp);
   rz_arena_free(arena);
@@ -202,7 +214,7 @@ export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   if (resp->status != 200) { rz_response_free(resp); rz_arena_free(arena); return 3; }
   if (rz_resp_body_len(resp) != 0) { rz_response_free(resp); rz_arena_free(arena); return 4; }
   rz_resp_text(resp, 500, "two");
-  if (!raize_str_starts(raize_buf_str(resp->body), "two")) { rz_response_free(resp); rz_arena_free(arena); return 5; }
+  if (!rz_str_starts(rz_buf_str(resp->body), "two")) { rz_response_free(resp); rz_arena_free(arena); return 5; }
   rz_response_free(resp);
   rz_arena_free(arena);
   return 0;

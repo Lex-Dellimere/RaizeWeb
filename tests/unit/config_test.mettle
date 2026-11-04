@@ -32,12 +32,12 @@ fn t_errs(e: RzConfigErrors*) {
   if (rz_config_keepalive(&c) != 100) { return 5; }
   if (rz_config_read_timeout_ms(&c) != 10000) { return 6; }
   if (rz_config_cache_max_age(&c) != 60) { return 7; }
-  if (!raize_str_eq(rz_config_bind(&c), "0.0.0.0")) { return 8; }
-  if (!raize_str_eq(rz_config_static_root(&c), "public")) { return 9; }
-  if (!raize_str_eq(rz_config_template_root(&c), "templates")) { return 10; }
-  if (!raize_str_eq(rz_config_allow_origin(&c), "*")) { return 11; }
-  if (!raize_str_eq(rz_config_store_dsn(&c), "")) { return 12; }
-  if (!raize_str_eq(rz_config_env(&c), "dev")) { return 13; }
+  if (!rz_str_eq(rz_config_bind(&c), "0.0.0.0")) { return 8; }
+  if (!rz_str_eq(rz_config_static_root(&c), "public")) { return 9; }
+  if (!rz_str_eq(rz_config_template_root(&c), "templates")) { return 10; }
+  if (!rz_str_eq(rz_config_allow_origin(&c), "*")) { return 11; }
+  if (!rz_str_eq(rz_config_store_dsn(&c), "")) { return 12; }
+  if (!rz_str_eq(rz_config_env(&c), "dev")) { return 13; }
   if (rz_config_buf_cap(&c) != 16384) { return 14; }   // 8192 + 8192 slack
   if (rz_config_frozen(&c)) { return 15; }
   if (rz_config_validate_code(&c) != RZ_CFG_OK) { return 16; }
@@ -84,18 +84,18 @@ fn t_errs(e: RzConfigErrors*) {
   var e: RzConfigErrors;
   t_errs(&e);
   if (rz_config_from_env(&c, &e) != 0) { return 1; }
-  if (!raize_str_eq(rz_config_bind(&c), "127.0.0.1")) { return 2; }
+  if (!rz_str_eq(rz_config_bind(&c), "127.0.0.1")) { return 2; }
   if (rz_config_port(&c) != 9000) { return 3; }
   if (rz_config_workers(&c) != 8) { return 4; }
   if (rz_config_max_header_bytes(&c) != 4096) { return 5; }
   if (rz_config_max_body(&c) != 4096) { return 6; }
   if (rz_config_keepalive(&c) != 7) { return 7; }
   if (rz_config_read_timeout_ms(&c) != 250) { return 8; }
-  if (!raize_str_eq(rz_config_static_root(&c), "www")) { return 9; }
-  if (!raize_str_eq(rz_config_template_root(&c), "tpl")) { return 10; }
+  if (!rz_str_eq(rz_config_static_root(&c), "www")) { return 9; }
+  if (!rz_str_eq(rz_config_template_root(&c), "tpl")) { return 10; }
   if (rz_config_cache_max_age(&c) != 0) { return 11; }
-  if (!raize_str_eq(rz_config_allow_origin(&c), "https://example.test")) { return 12; }
-  if (!raize_str_eq(rz_config_store_dsn(&c), "mem://x")) { return 13; }
+  if (!rz_str_eq(rz_config_allow_origin(&c), "https://example.test")) { return 12; }
+  if (!rz_str_eq(rz_config_store_dsn(&c), "mem://x")) { return 13; }
   return 0;
 }
 
@@ -126,8 +126,8 @@ fn t_errs(e: RzConfigErrors*) {
   if (rz_config_port(&c) != 8080) { return 2; }          // never a silent bad value
   if (rz_config_error_count(&e) != 1) { return 3; }
   var text: string = rz_config_error_text(&e, 0);
-  if (!raize_str_eq(text, "RAIZE_PORT: not a number or out of range: \"notaport\" (allowed 1..65535)")) { return 4; }
-  if (!raize_str_contains(text, "RAIZE_PORT")) { return 5; }
+  if (!rz_str_eq(text, "RAIZE_PORT: not a number or out of range: \"notaport\" (allowed 1..65535)")) { return 4; }
+  if (!rz_str_contains(text, "RAIZE_PORT")) { return 5; }
   return 0;
 }
 
@@ -140,7 +140,7 @@ fn t_errs(e: RzConfigErrors*) {
   if (rz_config_from_env(&c, &e) != -1) { return 1; }
   if (rz_config_error_count(&e) != 1) { return 2; }
   var text: string = rz_config_error_text(&e, 0);
-  if (!raize_str_eq(text, "RAIZE_PORT: not a number or out of range: \"99999999999999999999\" (allowed 1..65535)")) { return 3; }
+  if (!rz_str_eq(text, "RAIZE_PORT: not a number or out of range: \"99999999999999999999\" (allowed 1..65535)")) { return 3; }
   return 0;
 }
 
@@ -160,7 +160,7 @@ fn t_errs(e: RzConfigErrors*) {
   if (rz_config_set_e(&c, "RAISE_PORT", "8080", &e) != RZ_CFG_E_UNKNOWN_KEY) { return 4; }
   var n: int32 = rz_config_error_count(&e);
   if (n != 1) { return 5; }
-  if (!raize_str_eq(rz_config_error_text(&e, n - 1), "RAISE_PORT: unknown config variable")) { return 6; }
+  if (!rz_str_eq(rz_config_error_text(&e, n - 1), "RAISE_PORT: unknown config variable")) { return 6; }
   return 0;
 }
 
@@ -185,7 +185,7 @@ fn t_errs(e: RzConfigErrors*) {
   t_errs(&e);
   if (rz_config_validate(&c, &e) != -1) { return 1; }
   if (rz_config_error_count(&e) != 1) { return 2; }
-  if (!raize_str_eq(rz_config_error_text(&e, 0), "RAIZE_WORKERS: must be 1..64, got 0")) { return 3; }
+  if (!rz_str_eq(rz_config_error_text(&e, 0), "RAIZE_WORKERS: must be 1..64, got 0")) { return 3; }
   return 0;
 }
 
@@ -195,7 +195,7 @@ fn t_errs(e: RzConfigErrors*) {
   var e: RzConfigErrors;
   t_errs(&e);
   if (rz_config_validate(&c, &e) != -1) { return 1; }
-  if (!raize_str_eq(rz_config_error_text(&e, 0), "RAIZE_WORKERS: must be 1..64, got 65")) { return 2; }
+  if (!rz_str_eq(rz_config_error_text(&e, 0), "RAIZE_WORKERS: must be 1..64, got 65")) { return 2; }
   return 0;
 }
 
@@ -232,7 +232,7 @@ fn t_errs(e: RzConfigErrors*) {
   t_errs(&e);
   if (rz_config_validate_roots(&c, &e) != -1) { return 2; }
   if (rz_config_error_count(&e) != 2) { return 3; }   // both roots missing
-  if (!raize_str_contains(rz_config_error_text(&e, 0), "RAIZE_STATIC_ROOT")) { return 4; }
+  if (!rz_str_contains(rz_config_error_text(&e, 0), "RAIZE_STATIC_ROOT")) { return 4; }
 
   rz_config_dir_test_set(true);
   if (rz_config_validate_roots_code(&c) != RZ_CFG_OK) { return 5; }
@@ -312,10 +312,10 @@ fn t_errs(e: RzConfigErrors*) {
 // ---------------------------------------------------------------------------
 
 @test fn t_strerror_exact() -> int32 {
-  if (!raize_str_eq(rz_config_strerror(RZ_CFG_E_PORT), "RAIZE_PORT: not a number or out of range (allowed 1..65535)")) { return 1; }
-  if (!raize_str_eq(rz_config_strerror(RZ_CFG_E_WORKERS), "RAIZE_WORKERS: not a number or out of range (allowed 1..64)")) { return 2; }
-  if (!raize_str_eq(rz_config_strerror(RZ_CFG_E_MAX_BODY), "RAIZE_MAX_BODY_BYTES: not a number or out of range (allowed 1024..67108864)")) { return 3; }
-  if (!raize_str_eq(rz_config_strerror(RZ_CFG_E_FROZEN), "config: frozen after startup; load/set/validate refused")) { return 4; }
-  if (!raize_str_contains(rz_config_strerror(999), "unknown")) { return 5; }
+  if (!rz_str_eq(rz_config_strerror(RZ_CFG_E_PORT), "RAIZE_PORT: not a number or out of range (allowed 1..65535)")) { return 1; }
+  if (!rz_str_eq(rz_config_strerror(RZ_CFG_E_WORKERS), "RAIZE_WORKERS: not a number or out of range (allowed 1..64)")) { return 2; }
+  if (!rz_str_eq(rz_config_strerror(RZ_CFG_E_MAX_BODY), "RAIZE_MAX_BODY_BYTES: not a number or out of range (allowed 1024..67108864)")) { return 3; }
+  if (!rz_str_eq(rz_config_strerror(RZ_CFG_E_FROZEN), "config: frozen after startup; load/set/validate refused")) { return 4; }
+  if (!rz_str_contains(rz_config_strerror(999), "unknown")) { return 5; }
   return 0;
 }

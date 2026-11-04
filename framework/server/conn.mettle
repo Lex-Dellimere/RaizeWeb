@@ -99,7 +99,7 @@ fn rz_conn_refusal_text(status: int32) -> string {
 
 // Serializes the head into `out` and writes head + body. Returns bytes written
 // or -1. `is_head` suppresses the body but keeps the headers (RFC 9110 §9.3.2).
-fn rz_conn_write(fd: int64, resp: RzResponse*, out: RaizeBuf*, keepalive: bool, is_head: bool, now_secs: int64) -> int64 {
+fn rz_conn_write(fd: int64, resp: RzResponse*, out: RzBuf*, keepalive: bool, is_head: bool, now_secs: int64) -> int64 {
   if (out == 0 || resp == 0) { return -1; }
   out->len = 0;
   rz_resp_serialize_head(resp, out, keepalive, now_secs);
@@ -118,7 +118,7 @@ fn rz_conn_write(fd: int64, resp: RzResponse*, out: RaizeBuf*, keepalive: bool, 
 
 // Writes a minimal refusal response and returns the byte count. The connection
 // is always closed after a refusal (caller's job).
-fn rz_conn_fail(fd: int64, resp: RzResponse*, out: RaizeBuf*, status: int32, now_secs: int64) -> int64 {
+fn rz_conn_fail(fd: int64, resp: RzResponse*, out: RzBuf*, status: int32, now_secs: int64) -> int64 {
   rz_response_reset(resp);
   resp->status = status;
   resp->close_after = true;
@@ -198,7 +198,7 @@ fn rz_conn_read_request(fd: int64, buf: uint8*, cap: int64, have: int64*, req: R
         }
         total = total + got2;
       }
-      req->body = raize_str_view(bb, need);
+      req->body = rz_str_view(bb, need);
       *out_body = bb;
       // Nothing beyond the body was taken from buf, so any tail is pipelined.
       var consumed2: int64 = req->head_len + avail;
@@ -246,9 +246,9 @@ export fn rz_conn_serve(srv: RzServer*, fd: int64) -> int64 {
   if (resp == 0) { return -1; }
   defer rz_response_free(resp);
 
-  var out: RaizeBuf* = raize_buf_new_cap(1024);
+  var out: RzBuf* = rz_buf_new_cap(1024);
   if (out == 0) { return -1; }
-  defer raize_buf_free(out);
+  defer rz_buf_free(out);
 
   var have: int64 = 0;
   var served: int32 = 0;

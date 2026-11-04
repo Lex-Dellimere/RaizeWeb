@@ -29,7 +29,7 @@ fn h_home(c: RzContext*) -> int32 {
 
 fn h_hello(c: RzContext*) -> int32 {
   var who: string = c->req->params[0].value;
-  if (!raize_str_eq(who, "world")) { return 500; }
+  if (!rz_str_eq(who, "world")) { return 500; }
   return 200;
 }
 
@@ -77,13 +77,13 @@ fn main() -> int32 {
   // The server's parser decodes + normalizes, so production runs in decoded
   // mode. This harness mirrors that.
   rz_router_set_path_decoded(rt, true);
-  if (rz_router_add(rt, "GET", "/", &h_home) != RZ_E_OK) { return 2; }
-  if (rz_router_add(rt, "GET", "/hello/:name", &h_hello) != RZ_E_OK) { return 3; }
-  if (rz_router_add(rt, "GET", "/files/*path", &h_files) != RZ_E_OK) { return 4; }
-  if (rz_router_add(rt, "POST", "/form", &h_form) != RZ_E_OK) { return 5; }
+  if (rz_router_add(rt, "GET", "/", &h_home) != RZ_OK) { return 2; }
+  if (rz_router_add(rt, "GET", "/hello/:name", &h_hello) != RZ_OK) { return 3; }
+  if (rz_router_add(rt, "GET", "/files/*path", &h_files) != RZ_OK) { return 4; }
+  if (rz_router_add(rt, "POST", "/form", &h_form) != RZ_OK) { return 5; }
   var g: RzGroup* = rz_router_group(rt, "/api");
   if (g == 0) { return 6; }
-  if (rz_group_add(g, "POST", "/echo", &h_echo) != RZ_E_OK) { return 7; }
+  if (rz_group_add(g, "POST", "/echo", &h_echo) != RZ_OK) { return 7; }
   println("routes={rz_router_count(rt)} nodes={rz_router_nodes(rt)}");
 
   var fail: int32 = 0;
@@ -102,8 +102,8 @@ fn main() -> int32 {
   var rt2: RzRouter* = rz_router_new();
   if (rt2 == 0) { return 8; }
   defer rz_router_free(rt2);
-  if (rz_router_add(rt2, "GET", "/hello/:name", &h_hello) != RZ_E_OK) { return 9; }
-  if (rz_router_add(rt2, "GET", "/files/*path", &h_files) != RZ_E_OK) { return 10; }
+  if (rz_router_add(rt2, "GET", "/hello/:name", &h_hello) != RZ_OK) { return 9; }
+  if (rz_router_add(rt2, "GET", "/files/*path", &h_files) != RZ_OK) { return 10; }
   println("-- fallback (router decodes) --");
   if (run_req(rt2, "GET", "/hello/world") != 200) { fail = fail + 1; }
   if (run_req(rt2, "GET", "/a/%2e%2e") != 400) { fail = fail + 1; }
