@@ -1,0 +1,219 @@
+// tools/rzpp/entry — entry mode (DECISIONS.md D1 "Multi-file apps", reports/007).
+//
+//   rzpp <entry.mettle> [out]
+//
+// Loads the entry and, transitively, every LOCAL import: `import "x";` whose
+// `<dir of the importer>/x.mettle` exists (std/... and package paths such as
+// raize_core/str/str never do). A file needs generating when it is the entry, holds rz
+// decorators or html""" literals, or imports a file that needs generating. Each one is
+// written to `<name>.gen.mettle` beside it, and in generated output `import "x";`
+// becomes `import "x.gen";` on the same line when x was generated. Other files are left
+// alone and imported as they are. Every file is loaded once, so import cycles end
+// (the compiler reports them with the chain).
+
+import "std/io";
+import "std/mem";
+import "raize_core/str/str";
+import "src";
+import "deco";
+
+const RZPP_MAX_FILES: int32 = 128;
+
+export struct RzppProject {
+  paths: RzStrList*;            // normalized source paths; [0] is the entry
+  srcs: RzStrList*;             // their contents (owned)
+  need: bool[128];              // generate a .gen.mettle for paths[i]
+  err: string;                  // empty, or "path: message"
+}
+
+export fn rzpp_read(path: string) -> string {
+  var fp: cstring = fopen(rz_str_c(path), "rb");
+  if (fp == 0) { return rz_str_empty(); }
+  var b: RzBuf* = rz_buf_new_cap(65536);
+  var chunk: uint8[8192];
+  while (true) {
+    var got: int64 = fread((cstring)&chunk[0], 1, 8192, fp);
+    if (got <= 0) { break; }
+    rz_buf_add_bytes(b, &chunk[0], got);
+  }
+  fclose(fp);
+  return rz_buf_take(b);
+}
+
+export fn rzpp_write(path: string, s: string) -> bool {
+  var fp: cstring = fopen(rz_str_c(path), "wb");
+  if (fp == 0) { return false; }
+  var n: int64 = fwrite((cstring)s.chars, 1, (int64)s.length, fp);
+  fclose(fp);
+  return n == (int64)s.length;
+}
+
+// "a/b/../c/./d" -> "a/c/d" (owned). Leading ".." segments are kept.
+fn rzpp_norm(path: string) -> string {
+  var parts: RzStrList* = rz_str_split(path, 47);
+  var keep: RzStrList* = rz_strlist_new();
+  for i in 0..parts->len {
+    var p: string = parts->items[i];
+    if (rz_str_eq(p, ".") || (p.length == 0 && i > 0)) { continue; }
+    if (rz_str_eq(p, "..") && keep->len > 0 && !rz_str_eq(keep->items[keep->len - 1], "..")) {
+      keep->len = keep->len - 1;
+      continue;
+    }
+    rz_strlist_push(keep, p);
+  }
+  var b: RzBuf* = rz_buf_new();
+  for i in 0..keep->len {
+    if (i > 0) { rz_buf_add_byte(b, 47); }
+    rz_buf_add(b, keep->items[i]);
+  }
+  rz_strlist_free(keep);
+  rz_strlist_free(parts);
+  return rz_buf_take(b);
+}
+
+// The file `import "name";` in `from` refers to, if it is local: owned path, or empty.
+fn rzpp_local_import(from: string, name: string) -> string {
+  if (rz_str_starts(name, "std/") || rz_str_ends(name, ".gen") || name.length == 0) { return rz_str_empty(); }
+  var slash: int64 = rz_str_rfind_byte(from, 47);
+  var raw: string = "{name}.mettle";
+  if (slash >= 0) { raw = "{rz_str_sub(from, 0, slash + 1)}{name}.mettle"; }
+  var p: string = rzpp_norm(raw);
+  var fp: cstring = fopen(rz_str_c(p), "rb");
+  if (fp == 0) { rz_str_free(p); return rz_str_empty(); }
+  fclose(fp);
+  return p;
+}
+
+// The next `import "..."` at the start of a line, from *at on: writes the offsets of
+// the name between the quotes and moves *at past that line. False when there is none.
+fn rzpp_next_import(src: string, at: int64*, a: int64*, b: int64*) -> bool {
+  var i: int64 = *at;
+  var len: int64 = (int64)src.length;
+  while (i < len) {
+    var e: int64 = rz_str_find_byte_from(src, 10, i);
+    if (e < 0) { e = len; }
+    var k: int64 = i;
+    while (k < e && (src.chars[k] == 32 || src.chars[k] == 9)) { k = k + 1; }
+    if (rz_str_starts(rz_str_sub(src, k, e), "import \"")) {
+      var q: int64 = rz_str_find_byte_from(src, 34, k + 8);
+      if (q > 0 && q < e) {
+        *a = k + 8;
+        *b = q;
+        *at = e + 1;
+        return true;
+      }
+    }
+    i = e + 1;
+  }
+  *at = len;
+  return false;
+}
+
+// True when src has an html""" literal or an rz decorator line outside `//` comments.
+export fn rzpp_wants(src: string) -> bool {
+  var at: int64 = rz_str_find(src, "html\"\"\"");
+  while (at >= 0) {
+    if (!rzpp_in_comment(src, at)) { return true; }
+    at = rz_str_find_from(src, "html\"\"\"", at + 7);
+  }
+  var i: int64 = 0;
+  var len: int64 = (int64)src.length;
+  while (i < len) {
+    var e: int64 = rz_str_find_byte_from(src, 10, i);
+    if (e < 0) { e = len; }
+    var k: int64 = i;
+    while (k < e && (src.chars[k] == 32 || src.chars[k] == 9)) { k = k + 1; }
+    if (k < e && src.chars[k] == 64) {
+      var n: int64 = k + 1;
+      while (n < e && rzpp_ident_char((int32)src.chars[n])) { n = n + 1; }
+      if (rzpp_is_rz_deco(rz_str_sub(src, k + 1, n))) { return true; }
+    }
+    i = e + 1;
+  }
+  return false;
+}
+
+// Index of the file `import "name"` in paths[from] refers to, or -1 (not local or
+// not loaded).
+fn rzpp_target(p: RzppProject*, from: int64, name: string) -> int64 {
+  var t: string = rzpp_local_import(p->paths->items[from], name);
+  if (t.length == 0) { return -1; }
+  var j: int64 = rzpp_list_index(p->paths, t);
+  rz_str_free(t);
+  return j;
+}
+
+// Loads the entry and every local import, then decides which files need generating.
+export fn rzpp_project_load(entry: string) -> RzppProject* {
+  var p: RzppProject* = (RzppProject*)calloc(1, sizeof(RzppProject));
+  p->paths = rz_strlist_new();
+  p->srcs = rz_strlist_new();
+  p->err = rz_str_empty();
+  var src: string = rzpp_read(entry);
+  if (src.length == 0) { p->err = "rzpp: cannot read {entry}"; return p; }
+  rz_strlist_push(p->paths, rzpp_norm(entry));
+  rz_strlist_push(p->srcs, src);
+  var k: int64 = 0;
+  while (k < p->paths->len) {
+    var s: string = p->srcs->items[k];
+    var at: int64 = 0;
+    var a: int64 = 0;
+    var b: int64 = 0;
+    while (rzpp_next_import(s, &at, &a, &b)) {
+      var t: string = rzpp_local_import(p->paths->items[k], rz_str_sub(s, a, b));
+      if (t.length == 0 || rzpp_list_index(p->paths, t) >= 0) { rz_str_free(t); continue; }
+      if (p->paths->len >= (int64)RZPP_MAX_FILES) {
+        p->err = "{p->paths->items[k]}:{rzpp_line_of(s, a)}: more than {RZPP_MAX_FILES} local files — rzpp's entry mode stops here";
+        return p;
+      }
+      var ts: string = rzpp_read(t);
+      if (ts.length == 0) { p->err = "{p->paths->items[k]}:{rzpp_line_of(s, a)}: cannot read {t}"; return p; }
+      rz_strlist_push(p->paths, t);
+      rz_strlist_push(p->srcs, ts);
+    }
+    k = k + 1;
+  }
+  for i in 0..p->paths->len { p->need[i] = i == 0 || rzpp_wants(p->srcs->items[i]); }
+  // A file importing a generated file must import its .gen too: spread until stable.
+  var changed: bool = true;
+  while (changed) {
+    changed = false;
+    for i in 0..p->paths->len {
+      if (p->need[i]) { continue; }
+      var s: string = p->srcs->items[i];
+      var at: int64 = 0;
+      var a: int64 = 0;
+      var b: int64 = 0;
+      while (!p->need[i] && rzpp_next_import(s, &at, &a, &b)) {
+        var j: int64 = rzpp_target(p, i, rz_str_sub(s, a, b));
+        if (j >= 0 && p->need[j]) { p->need[i] = true; changed = true; }
+      }
+    }
+  }
+  return p;
+}
+
+// `gen` (generated from paths[from]) with `import "x";` turned into `import "x.gen";`
+// for every generated x. Same lines.
+export fn rzpp_rewrite_imports(p: RzppProject*, from: int64, gen: string) -> string {
+  var out: RzBuf* = rz_buf_new_cap((int64)gen.length + 256);
+  var copied: int64 = 0;
+  var at: int64 = 0;
+  var a: int64 = 0;
+  var b: int64 = 0;
+  while (rzpp_next_import(gen, &at, &a, &b)) {
+    var j: int64 = rzpp_target(p, from, rz_str_sub(gen, a, b));
+    if (j < 0 || !p->need[j]) { continue; }
+    rz_buf_add(out, rz_str_sub(gen, copied, b));
+    rz_buf_add(out, ".gen");
+    copied = b;
+  }
+  rz_buf_add(out, rz_str_from(gen, copied));
+  return rz_buf_take(out);
+}
+
+// "dir/name.mettle" -> "dir/name.gen.mettle" (owned).
+export fn rzpp_gen_path(path: string) -> string {
+  if (rz_str_ends(path, ".mettle")) { return "{rz_str_sub(path, 0, (int64)path.length - 7)}.gen.mettle"; }
+  return "{path}.gen.mettle";
+}

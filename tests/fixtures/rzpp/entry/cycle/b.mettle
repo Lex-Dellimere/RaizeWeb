@@ -1,0 +1,5 @@
+import "a";
+import "std/io";
+fn b_view() -> RzHtml* {
+  return html"""<p>b</p>""";
+}

@@ -1,0 +1,7 @@
+@signal
+struct Lamp { on: bool; }
+enum LampMsg { Flip, Set(bool) }
+fn lamp_update(s: Lamp*, msg: LampMsg) { }
+fn lamp_view(s: Lamp*) -> RzHtml* {
+  return html"""<p>{s->on}</p>""";
+}

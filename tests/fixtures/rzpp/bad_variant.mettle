@@ -1,4 +1,4 @@
-enum PageMsg { Go }
+enum PageMsg { Go, To(int32) }
 
 fn page_update(s: Page*, msg: PageMsg) { }
 

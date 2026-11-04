@@ -1,0 +1,27 @@
+// tests/fixtures/app/multi — a multi-file app built through rzpp's entry mode (P3-C3,
+// DECISIONS D1 "Multi-file apps", reports/007). `rzpp app.mettle` generates
+// app.gen.mettle, counter.gen.mettle and notes.gen.mettle and rewrites the imports
+// below to "counter.gen" / "notes.gen" on the same lines; util.mettle has no decorators
+// or html literals, so it is imported as it is. Default port 8073.
+//
+//   GET /counter     Signal Counter (counter.mettle, 1-arg mount reading util)
+//   /api/notes       JSON API of resource Note (notes.mettle)
+//   GET /hello       plain handler using util
+
+import "raize";
+import "counter";
+import "notes";
+import "util";
+
+fn multi_hello(ctx: RzContext*) -> int32 {
+  return rz_ctx_text(ctx, 200, "{multi_greeting()} start={multi_start()}");
+}
+
+fn multi_app(app: RzApp*) {
+  rz_default(app, "port", "8073");
+  counter_signal(app, "/counter", "");
+  note_json_api(app, "/api/notes", rz_mem_layer(app, note_resource(), 4));
+  rz_get(app, "/hello", &multi_hello);
+}
+
+fn main() -> int32 { return rz_run("multi", &multi_app); }

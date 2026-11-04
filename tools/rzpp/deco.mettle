@@ -18,7 +18,7 @@ import "signal";
 
 const RZPP_DECOS: string = "resource signal required min_length max_length create read update destroy action";
 
-fn rzpp_is_rz_deco(name: string) -> bool {
+export fn rzpp_is_rz_deco(name: string) -> bool {
   var known: RzStrList* = rz_str_split(RZPP_DECOS, 32);
   var ok: bool = rzpp_list_index(known, name) >= 0;
   rz_strlist_free(known);
@@ -184,7 +184,17 @@ fn rzpp_decl_run(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
   var sig: bool = rzpp_decl_has(d, "signal");
   if (res && sig) { rzpp_fail(g, d->decos[0].at, "struct {d->name} is both @resource and @signal — keep the data in a resource and put a layer in the Signal's state"); return; }
   if (!res && !sig) { rzpp_fail(g, d->decos[0].at, "@{d->decos[0].name} needs @resource on the same struct — add @resource above it"); return; }
-  if (res) { rzpp_resource(g, d, out); } else { rzpp_signal(g, d, out); }
+  if (g->imported && !d->exported) {
+    rzpp_fail(g, d->at, "struct {d->name} is in an imported file, so the app cannot call what rzpp generates for it — write `export struct {d->name}`");
+    return;
+  }
+  if (res) {
+    rz_strlist_push(g->resources, rz_str_dup(d->snake));
+    rzpp_resource(g, d, out);
+  } else {
+    g->signals = g->signals + 1;
+    rzpp_signal(g, d, out);
+  }
 }
 
 // Finds every rz decorator group in g->src, strips it, and appends the generated code

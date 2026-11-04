@@ -19,6 +19,8 @@
 //   fn NameMsg__publish(topic: string, m: NameMsg) -> bool
 //       any thread: delivers m to every instance listening on topic
 //
+// At least one variant needs a payload: a payload-less enum is a plain enum, and
+// `match` rejects plain enums (reports/017, DECISIONS A1).
 // Payload types: none, int32, int64, bool, string. A string payload is a view
 // valid during update(); copy it to keep it.
 
@@ -246,6 +248,13 @@ export fn rzpp_messages(g: RzppGen*, out: RzBuf*) {
         k = k + 1;
       }
       rz_strlist_free(parts);
+      var payloads: int32 = 0;
+      for v in 0..vtypes->len {
+        if (vtypes->items[v].length > 0) { payloads = payloads + 1; }
+      }
+      if (payloads == 0) {   // DECISIONS A1, reports/017
+        rzpp_fail(g, at, "enum {name} has no payload variant — give one variant a payload (a payload-less enum is a plain enum and `match` rejects it)");
+      }
       rzpp_emit_json(out, name, vnames, vtypes);
       rzpp_emit_put(out, name);
       rzpp_emit_decode(out, name, vnames, vtypes);

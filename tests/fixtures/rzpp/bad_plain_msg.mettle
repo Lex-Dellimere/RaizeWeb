@@ -1,0 +1,12 @@
+// A message enum without any payload variant is a plain enum, and `match` rejects plain
+// enums (reports/017): rzpp stops at the enum's line (DECISIONS A1).
+@signal
+struct Lamp { on: bool; }
+
+enum LampMsg { On, Off }
+
+fn lamp_update(s: Lamp*, msg: LampMsg) { }
+fn lamp_view(s: Lamp*) -> RzHtml* {
+  return html"""<button on:click={On}>on</button>""";
+}
+// expect: 6: enum LampMsg has no payload variant — give one variant a payload (a payload-less enum is a plain enum and `match` rejects it)

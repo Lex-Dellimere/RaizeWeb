@@ -17,9 +17,9 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [004](004-sigterm-live-clients.md) | unverified | raize_web | medium | Shutdown on SIGTERM with live keep-alive or WebSocket clients is unverified | open; channel socket verified (fixtures/app/channels, exit 0 < 3 s); keep-alive and Signal still to check |
 | [005](005-channels-not-wired.md) | missing | raize_web | medium | `rz_channel` records a declaration but no `/socket/websocket` route is derived yet | fixed (P3-C1: `/socket/websocket` from rz_run, `rz_broadcast`, `rz_chan_conn`; fixtures/app/channels) |
 | [006](006-per-user-signals.md) | missing | raize_web | high | Signals cannot be per-user: `mount` gets no request, session or user, and the Signal socket has no guard | fixed (P3-C2: 2-arg mount with RzConn, guards on `/signal/websocket?path=`, joins bound to the page path; fixtures/app/live) |
-| [007](007-rzpp-multi-file.md) | missing | raize_web | medium | rzpp handles one file at a time; multi-file apps need entry mode | open; P3-C |
+| [007](007-rzpp-multi-file.md) | missing | raize_web | medium | rzpp handles one file at a time; multi-file apps need entry mode | fixed (P3-C3: `rzpp <entry.mettle> [out]` generates every local import with decorators/html and rewrites imports to `x.gen`; fixtures/app/multi) |
 | [008](008-view-hole-error-lines.md) | limitation | raize_web | low | A Mettle type error inside a view hole points at the `return html"""` line | open; needs a compiler line-mapping directive (report 014) or tagged literals (report 013) |
-| [009](009-rzpp-resource-file-size.md) | cleanup | raize_web | low | `tools/rzpp/resource.mettle` is 459 lines (D6 budget 400); lint does not cover tools/ | open; P6-G3 splits it and extends lint to tools/ |
+| [009](009-rzpp-resource-file-size.md) | cleanup | raize_web | low | `tools/rzpp/resource.mettle` is 459 lines (D6 budget 400); lint does not cover tools/ | open; 430 after P3-C3 moved the contract helpers to tools/rzpp/contract.mettle; P6-G3 splits it and extends lint to tools/ |
 | [010](010-signal-dependency-tracking.md) | missing | raize_web | low | Signals re-render the whole view per event (value diff), not per changed field | open; design in docs/design/views.md §3, needs compiler help (report 015) |
 | [011](011-keyed-lists.md) | missing | raize_web | low | No keyed lists: a changed comprehension resends its whole `d` array | open (O2: out of scope of the redesign) |
 | [013](013-compiler-tagged-literals.md) | compiler | Mettle compiler | feature | Tagged literals (`html"""..."""` handed to a compile-time `@literal` metafunction) | not delivered: the cross-session message to the mettle session was held and expired; full request in docs/design/mettle-tagged-literals-request.md |
@@ -42,6 +42,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [030](030-telemetry-library.md) | missing | raize_web | medium | No telemetry library (events, handlers, spans, metrics) | open; part of D8 |
 | [031](031-crypto-main-thread-only.md) | limitation | Mettle runtime / raize | high | Crypto (libsodium via C interop) is main-thread only; raize handlers run on worker threads | open; needs a Mettle runtime fix or a main-thread crypto service |
 | [032](032-upgrade-abort-leak.md) | bug | raize_web | low | An upgrade aborted after the handler returns leaks its RzConn and a hub slot | open |
+| [033](033-compiler-exportless-import-visibility.md) | compiler | Mettle compiler | low | An export-less module imported first through another module is invisible to a later direct importer | open; worked around by exporting shared helpers |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its

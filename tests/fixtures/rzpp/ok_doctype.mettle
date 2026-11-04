@@ -1,0 +1,13 @@
+// <!doctype ...> and <!-- ... --> inside an html literal are static text: no tag, no
+// holes (`{n}` inside the comment stays literal text).
+fn page(n: int32) -> RzHtml* {
+  return html"""<!DOCTYPE html>
+<!-- page {n} -->
+<html><body><p>{n}</p><!--end--></body></html>""";
+}
+fn page_lower() -> RzHtml* {
+  return html"""<!doctype html><p>x</p>""";
+}
+// static: <!DOCTYPE html>\n<!-- page {{n} -->\n<html><body><p>
+// static: <!doctype html><p>x</p>
+// static: </p><!--end--></body></html>

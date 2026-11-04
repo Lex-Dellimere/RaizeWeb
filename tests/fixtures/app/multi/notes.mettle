@@ -1,0 +1,8 @@
+// tests/fixtures/app/multi/notes — a resource in its own file, exported for app.mettle.
+
+import "raize";
+
+@resource
+@required(text) @max_length(text, 20)
+@create(text) @read @destroy
+export struct Note { id: int64; text: string; }

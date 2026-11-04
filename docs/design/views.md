@@ -40,23 +40,26 @@ Phoenix's model, typed. It is also the shape of a process in the coming
 runtime: state, a mailbox of messages, and a handler.
 
 ```mettle
-import "raize/signal";
+import "raize";
 
 struct Todo { id: int32; title: string; done: bool; }
 enum Filter { All, Open, Done }
 
 // State is a plain struct. There is no assign/3: change a field and the view
-// knows (§3).
+// knows (§3). @signal binds it by name: TodosMsg, todos_update, todos_view.
+@signal
 struct Todos {
   items: Todo[];
   filter: Filter;
   draft: string;
+  owner: string;     // set by the 2-arg mount below
 }
 
 // Every event the page can send, as a tagged enum. `match` is exhaustive, so
 // an event the view emits but update() ignores does not compile.
 enum TodosMsg { Toggle(int32), Add, Draft(string), Show(Filter) }
 
+// Optional: sets up a new instance's state (the 1-arg form; 2-arg form below).
 fn todos_mount(s: Todos*) {
   s->filter = Filter.All;
 }
@@ -93,8 +96,26 @@ fn empty_state(message: string) -> RzHtml* {
   return html"""<p class="empty">{message}</p>""";
 }
 
-// Registered once (TodosMsg__signal is generated, see §7), served by a route.
-TodosMsg__signal(chans, "todos", &todos_mount, &todos_view, &todos_leave);
+// @signal on `struct Todos` generates todos_signal (§7); the declaration function
+// mounts it: page GET /todos, live on topic "signal:todos".
+todos_signal(app, "/todos", "");
+```
+
+**Mount, two forms** (rzpp detects which one is declared; both are optional). The
+1-arg form above only sets up state and always accepts. The 2-arg form (DECISIONS A9)
+also gets the `RzConn` of the request that opened the page (the first GET render and
+the socket see the same one: cookies, peer, and the user a guard set) and may refuse:
+any status other than `RZ_OK` answers the GET with that status and refuses the join
+with `{"reason": rz_status_text(code)}`.
+
+```mettle
+fn todos_mount(s: Todos*, c: RzConn*) -> int32 {
+  var u: User* = (User*)rz_conn_user(c);   // set by rz_guard(app, "/todos", &require_user)
+  if (u == 0) { return RZ_E_USAGE; }
+  s->owner = rz_str_dup(u->name);          // copied: the state outlives this call
+  s->filter = Filter.All;
+  return RZ_OK;
+}
 ```
 
 ## 2. The rules (all of them)

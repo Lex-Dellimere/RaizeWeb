@@ -18,6 +18,7 @@ import "std/mem";
 import "raize_core/str/str";
 import "src";
 import "decl";
+import "contract";
 
 fn rzpp_field_list(d: RzppDecl*) -> string {
   var b: RzBuf* = rz_buf_new();
@@ -190,36 +191,6 @@ fn rzpp_resource_deco(g: RzppGen*, d: RzppDecl*, dc: RzppDeco*, body: RzBuf*, ac
     return false;
   }
   return true;
-}
-
-// ---- generated contracts (DECISIONS.md D5) ----
-
-// One `in:` line: the first is "/// in:      name  what", the rest are indented.
-fn rzpp_in(b: RzBuf*, name: string, what: string) {
-  if (b->len == 0) { rz_buf_add(b, "/// in:      "); } else { rz_buf_add(b, "///          "); }
-  rz_buf_add(b, "{name}  {what}\n");
-}
-
-// Writes a contract and frees `ins`. `example` holds lines without the "///   " prefix,
-// separated by newlines.
-fn rzpp_contract(out: RzBuf*, summary: string, ins: RzBuf*, returns: string, owns: string, thread: string, example: string) {
-  rz_buf_add(out, "/// {summary}\n///\n");
-  if (ins->len == 0) { rz_buf_add(out, "/// in:      nothing\n"); } else { rz_buf_add(out, rz_buf_str(ins)); }
-  rz_buf_add(out, "/// returns: {returns}\n/// owns:    {owns}\n/// thread:  {thread}\n/// example:\n");
-  var lines: RzStrList* = rz_str_split(example, 10);
-  for i in 0..lines->len { rz_buf_add(out, "///   {lines->items[i]}\n"); }
-  rz_strlist_free(lines);
-  rz_buf_free(ins);
-}
-
-fn rzpp_glue(out: RzBuf*, what: string) {
-  rz_buf_add(out, "/// internal: generated glue. {what}\n");
-}
-
-fn rzpp_sample(t: string) -> string {
-  if (rz_str_eq(t, "string")) { return "\"text\""; }
-  if (rz_str_eq(t, "bool")) { return "true"; }
-  return "1";
 }
 
 const RZPP_THREAD: string = "any (the data layer serializes access)";

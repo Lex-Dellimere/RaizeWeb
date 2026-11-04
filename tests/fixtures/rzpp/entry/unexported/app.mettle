@@ -1,0 +1,3 @@
+// A decorated struct in an imported file must be exported (DECISIONS D1 "Multi-file apps").
+import "lamp";
+fn main() -> int32 { return 0; }

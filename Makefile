@@ -27,6 +27,13 @@ $(BUILD)/rzpp: $(wildcard tools/rzpp/*.mettle) $(wildcard libs/core/str/*.mettle
 %.gen.mettle: %.mettle $(BUILD)/rzpp
 	$(BUILD)/rzpp $< $@
 
+# A fixture app may span several files: entry mode (`rzpp app.mettle`) writes
+# <name>.gen.mettle beside every local import that needs it, so app.gen.mettle depends
+# on every source file in the app's directory.
+.SECONDEXPANSION:
+tests/fixtures/app/%/app.gen.mettle: $$(filter-out $$(wildcard tests/fixtures/app/$$*/*.gen.mettle),$$(wildcard tests/fixtures/app/$$*/*.mettle)) $(BUILD)/rzpp
+	$(BUILD)/rzpp tests/fixtures/app/$*/app.mettle
+
 .SECONDARY:
 
 $(BUILD)/%: examples/%/app.gen.mettle $(FRAMEWORK) | $(BUILD)

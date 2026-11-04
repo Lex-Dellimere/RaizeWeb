@@ -14,6 +14,9 @@ export struct RzppGen {
   enums: RzStrList*;  // message enum names (ending in Msg)
   variants: RzStrList*;   // "Variant" per entry...
   owners: RzStrList*;     // ...and the enum that declares it
+  resources: RzStrList*;  // snake names of this file's @resource structs (owned)
+  signals: int32;         // @signal structs in this file
+  imported: bool;         // reached through an import in entry mode (not the entry)
 }
 
 export fn rzpp_line_of(src: string, at: int64) -> int64 {

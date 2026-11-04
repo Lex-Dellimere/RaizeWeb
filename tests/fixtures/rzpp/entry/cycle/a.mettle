@@ -1,0 +1,5 @@
+// Entry mode over an import cycle a -> plain -> b -> a (rzpp.sh; not compiled: the
+// compiler reports cycles). plain.mettle has no html, but imports b, which does, so it
+// is generated too.
+import "plain";
+fn a_one() -> int32 { return 1; }

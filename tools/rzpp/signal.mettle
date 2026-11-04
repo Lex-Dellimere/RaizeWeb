@@ -7,14 +7,18 @@
 // wrappers (no fn-type casts):
 //
 //   Counter__mount(state, c) -> int32, Counter__view/__leave(state: rawptr)
-//   counter_signal(app, path, head)                 mounts the Signal, topic "signal:counter"
+//   counter_signal(app, path, head)                 mounts the Signal, topic "signal:counter";
+//                                                   first builds this file's resources (A5)
 //   counter_publish(topic, m) -> bool               any thread
+//
+// Both carry full contracts and are `export`ed when the struct is (A8).
 //
 // CounterMsg__handle and CounterMsg__publish come from msg.mettle, as before.
 
 import "raize_core/str/str";
 import "src";
 import "decl";
+import "contract";
 
 fn rzpp_has_fn(g: RzppGen*, name: string) -> bool {
   return rz_str_find(g->src, "fn {name}(") >= 0;
@@ -83,9 +87,46 @@ export fn rzpp_signal(g: RzppGen*, d: RzppDecl*, out: RzBuf*) {
   rzpp_signal_mount(g, out, T, "{s}_mount");
   rzpp_signal_wrapper(g, out, T, "{s}_leave", "leave");
   rz_buf_add(out, "fn {T}__view(state: rawptr) -> RzHtml* {{\n  return {s}_view(({T}*)state);\n}\n");
-  rz_buf_add(out, "/// Mounts Signal {T}: its page at `path` (GET), live over /signal/websocket on topic\n/// \"signal:{s}\".\n");
-  rz_buf_add(out, "/// in:      app the app; path the page route, copied; head extra <head> markup, copied\n/// returns: nothing; mistakes are reported by rz_run\n/// owns:    nothing kept from the caller\n/// thread:  the declaration function only\n/// example: -\n");
-  rz_buf_add(out, "fn {s}_signal(app: RzApp*, path: string, head: string) {{\n  rz__app_signal(app, \"{s}\", path, head, (int64)sizeof({T}), &{T}__mount, &{T}Msg__handle, &{T}__view, &{T}__leave);\n}\n");
-  rz_buf_add(out, "/// Delivers `m` to every {T} instance listening on `topic` (\"{s}\" reaches all).\n/// in:      topic the topic; m the message\n/// returns: false when the hub's mailbox is full\n/// owns:    nothing kept\n/// thread:  any\n/// example: -\n");
-  rz_buf_add(out, "fn {s}_publish(topic: string, m: {T}Msg) -> bool {{\n  return {T}Msg__publish(topic, m);\n}\n");
+  var ex: string = "";
+  if (d->exported) { ex = "export "; }
+  var ins: RzBuf* = rz_buf_new();
+  rzpp_in(ins, "app", "the app being declared (from rz_run)");
+  rzpp_in(ins, "path", "the page route (GET), e.g. \"/{s}\"; copied");
+  rzpp_in(ins, "head", "extra markup for the page's <head> (\"\" for none); copied");
+  rzpp_contract(out, "Mounts Signal {T}: its page at `path`, live over /signal/websocket on topic \"signal:{s}\". Builds every resource of this file first (DECISIONS A5).", ins,
+    "nothing; a bad or duplicate path is reported by rz_run at startup", "nothing kept from the caller",
+    "the declaration function only (main thread, before serving)", "{s}_signal(app, \"/{s}\", \"\");");
+  rz_buf_add(out, "{ex}fn {s}_signal(app: RzApp*, path: string, head: string) {{\n  {g->prefix}__resources();\n  rz__app_signal(app, \"{s}\", path, head, (int64)sizeof({T}), &{T}__mount, &{T}Msg__handle, &{T}__view, &{T}__leave);\n}\n");
+  ins = rz_buf_new();
+  rzpp_in(ins, "topic", "\"{s}\" reaches every {T} page; a topic an instance subscribed to with rz_signal_subscribe reaches those");
+  rzpp_in(ins, "m", "the message, delivered through {s}_update on the hub thread; a string payload is copied");
+  rzpp_contract(out, "Delivers `m` to every {T} instance listening on `topic`.", ins,
+    "true when queued; false when the hub's mailbox is full", "nothing kept", "any",
+    "var ok: bool = {s}_publish(\"{s}\", {rzpp_signal_sample(g, T)});");
+  rz_buf_add(out, "{ex}fn {s}_publish(topic: string, m: {T}Msg) -> bool {{\n  return {T}Msg__publish(topic, m);\n}\n");
+}
+
+// The first variant of enum <T>Msg with a sample payload ("Set(1)"), for examples.
+fn rzpp_signal_sample(g: RzppGen*, T: string) -> string {
+  var at: int64 = rz_str_find(g->src, "enum {T}Msg");
+  var open: int64 = rz_str_find_byte_from(g->src, 123, at);
+  var e: int64 = open + 1;
+  while (e < (int64)g->src.length && g->src.chars[e] != 44 && g->src.chars[e] != 125) { e = e + 1; }
+  var v: string = rzpp_trim(rz_str_sub(g->src, open + 1, e));
+  var paren: int64 = rz_str_find_byte(v, 40);
+  if (paren < 0) { return v; }
+  var t: string = rzpp_trim(rz_str_sub(v, paren + 1, (int64)v.length - 1));
+  return "{rz_str_sub(v, 0, paren)}({rzpp_sample(t)})";
+}
+
+// `<prefix>__resources()`, called first by every `<s>_signal` of this file: builds each
+// resource definition of the file during declaration, so none is first built on the
+// hub thread (DECISIONS A5).
+export fn rzpp_signal_resources(g: RzppGen*, out: RzBuf*) {
+  rzpp_glue(out, "Builds the resource definitions of this file on the main thread (DECISIONS A5).");
+  rz_buf_add(out, "fn {g->prefix}__resources() {{\n");
+  for i in 0..g->resources->len {
+    rz_buf_add(out, "  {g->resources->items[i]}_resource();\n");
+  }
+  rz_buf_add(out, "}\n");
 }

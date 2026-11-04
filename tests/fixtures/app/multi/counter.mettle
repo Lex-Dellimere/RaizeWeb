@@ -1,0 +1,23 @@
+// tests/fixtures/app/multi/counter — a Signal in its own file. The structs are exported
+// so app.mettle can call what rzpp generates (counter_signal, tally_resource). Tally is
+// a resource in the same file, so counter_signal builds it during declaration
+// (DECISIONS A5).
+
+import "raize";
+import "util";
+
+@signal
+export struct Counter { n: int32; }
+enum CounterMsg { Inc, Set(int32) }
+
+@resource
+@create(label) @read
+export struct Tally { id: int64; label: string; }
+
+fn counter_mount(s: Counter*) { s->n = multi_start(); }
+fn counter_update(s: Counter*, msg: CounterMsg) {
+  match (msg) { case Inc: { s->n = s->n + 1; } case Set(v): { s->n = v; } }
+}
+fn counter_view(s: Counter*) -> RzHtml* {
+  return html"""<p class="n">{s->n}</p><button on:click={Inc}>+</button>""";
+}

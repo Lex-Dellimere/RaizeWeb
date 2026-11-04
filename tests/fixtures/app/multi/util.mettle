@@ -1,0 +1,5 @@
+// tests/fixtures/app/multi/util — no decorators, no html literals: entry mode leaves it
+// alone and the generated files import it as it is.
+
+export fn multi_greeting() -> string { return "hello from util"; }
+export fn multi_start() -> int32 { return 7; }

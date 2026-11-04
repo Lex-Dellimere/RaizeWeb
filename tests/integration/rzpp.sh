@@ -43,6 +43,36 @@ same_line examples/todos/app.mettle '^const STYLE'
 same_line tests/fixtures/app/slice/app.mettle '^struct Note'
 same_line tests/fixtures/app/slice/app.mettle '^fn slice_app'
 
+# Good fixtures: tests/fixtures/rzpp/ok_*.mettle must generate, and every
+#   // static: <text>
+# line names a static string the generated file holds exactly ("<text>").
+for f in tests/fixtures/rzpp/ok_*.mettle; do
+  name=$(basename "$f" .mettle)
+  if ! msg=$("$RZPP" "$f" "$OUT" 2>&1); then echo "FAIL  $name: rzpp failed: $msg"; FAIL=$((FAIL + 1)); continue; fi
+  while IFS= read -r want; do
+    if grep '^const RZS_' "$OUT" | grep -qF "\"$want\""; then
+      echo "PASS  $name: static \"$want\""; PASS=$((PASS + 1))
+    else
+      echo "FAIL  $name: no static \"$want\" in: $(grep '^const RZS_' "$OUT")"; FAIL=$((FAIL + 1))
+    fi
+  done < <(grep '^// static: ' "$f" | sed 's|^// static: ||')
+done
+
+# Entry mode (reports/007): every local import that needs it is generated beside its
+# source, imports are rewritten on the same line, and a cycle ends.
+check() { # check <label> <command...>
+  local label=$1; shift
+  if "$@"; then echo "PASS  $label"; PASS=$((PASS + 1)); else echo "FAIL  $label"; FAIL=$((FAIL + 1)); fi
+}
+E=tests/fixtures/rzpp/entry
+check "entry mode ends on the cycle a -> plain -> b -> a" timeout 10 "$RZPP" $E/cycle/a.mettle
+check "a.gen.mettle:4 imports plain.gen" [ "$(sed -n 4p $E/cycle/a.gen.mettle)" = 'import "plain.gen";' ]
+check "plain (no html, imports b) is generated: plain.gen.mettle:1 imports b.gen" [ "$(sed -n 1p $E/cycle/plain.gen.mettle)" = 'import "b.gen";' ]
+check "b.gen.mettle imports a.gen and keeps std/io" [ "$(sed -n 1,2p $E/cycle/b.gen.mettle | tr '\n' ' ')" = 'import "a.gen"; import "std/io"; ' ]
+msg=$("$RZPP" $E/unexported/app.mettle 2>&1)
+want="$E/unexported/lamp.mettle:2: struct Lamp is in an imported file, so the app cannot call what rzpp generates for it — write \`export struct Lamp\`"
+check "unexported struct in an imported file -> [$msg]" [ "$msg" = "$want" ]
+
 echo
 if [ $FAIL -eq 0 ]; then echo "RZPP OK ($PASS checks)"; exit 0; fi
 echo "RZPP FAILED ($FAIL)"; exit 1
