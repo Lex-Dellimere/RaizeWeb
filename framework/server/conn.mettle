@@ -225,9 +225,13 @@ fn rz_conn_read_request(fd: int64, buf: uint8*, cap: int64, have: int64*, req: R
   }
 }
 
-// Serves requests on one accepted socket until close. Returns the number of
-// response bytes written, or -1 if the connection died before any response.
-export fn rz_conn_serve(srv: RzServer*, fd: int64) -> int64 {
+/// internal: server (rz_worker_main). Serves requests on one accepted socket until close.
+/// in:      srv the server; fd the accepted socket; peer its IPv4 address (bytes
+///          a.b.c.d in memory order, 0 unknown), copied into every request's ctx->peer
+/// returns: response bytes written, -1 if the connection died before any response,
+///          or RZ_CONN_DETACHED when a handler upgraded it (the socket is then not ours)
+/// owns:    nothing; the caller closes `fd` unless it was detached
+export fn rz_conn_serve(srv: RzServer*, fd: int64, peer: uint32) -> int64 {
   if (srv == 0 || fd < 0) { return -1; }
 
   var cap: int64 = srv->opts.buf_cap;
@@ -291,6 +295,7 @@ export fn rz_conn_serve(srv: RzServer*, fd: int64) -> int64 {
     rz_response_reset(resp);
     var ctx: RzContext;
     rz_ctx_init(&ctx, &req, resp, arena);
+    ctx.peer = peer;
     var hr: int32 = 0;
     if (srv->handler != 0) {
       hr = srv->handler(&ctx);

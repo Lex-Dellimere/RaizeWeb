@@ -23,6 +23,7 @@ import "arena";
 import "header";
 import "request";
 import "response";
+import "../core/status";
 
 // A request a handler has accepted for a protocol upgrade (WebSocket). The
 // handler fills ctx->upgrade; after it returns, the connection loop calls
@@ -49,6 +50,7 @@ export struct RzContext {
   bytes_written: int64;   // set by the server after the write
   aborted: bool;          // a middleware refused: do not call the handler
   upgrade: RzUpgrade*;    // set by an upgrading handler, else 0
+  peer: uint32;           // the socket's IPv4 address, bytes a.b.c.d in memory order; 0 unknown
 }
 
 // Binds a context to a request/response pair. `resp->arena` is set here, once,
@@ -64,6 +66,7 @@ export fn rz_ctx_init(ctx: RzContext*, req: RzRequest*, resp: RzResponse*, arena
   ctx->bytes_written = 0;
   ctx->aborted = false;
   ctx->upgrade = 0;
+  ctx->peer = 0;
   if (resp != 0) {
     resp->arena = arena;
   }
@@ -157,6 +160,89 @@ export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   var n: int64 = rz_str_to_int(v);
   *out = n;
   return true;
+}
+
+/// Attaches the signed-in user (or any per-request principal) to the request.
+/// A guard or middleware sets it; later steps and the handler read it with
+/// rz_ctx_user, and a WebSocket upgrade copies it into the connection's RzConn.
+///
+/// in:      ctx   the request
+///          user  the app's own value (e.g. a User* found from a session cookie); 0 clears
+/// returns: nothing
+/// owns:    nothing; the app keeps `user` alive at least until the request ends (and
+///          for as long as a socket that captured it is open)
+/// thread:  the worker serving the request
+/// example:
+///   rz_ctx_set_user(ctx, (rawptr)u);
+export fn rz_ctx_set_user(ctx: RzContext*, user: rawptr) {
+  if (ctx == 0) { return; }
+  ctx->user = user;
+}
+
+/// The value a guard or middleware attached with rz_ctx_set_user, or 0.
+///
+/// in:      ctx the request
+/// returns: the user pointer, or 0 when none was set
+/// owns:    nothing; borrowed from whoever set it
+/// thread:  the worker serving the request
+/// example: -
+export fn rz_ctx_user(ctx: RzContext*) -> rawptr {
+  if (ctx == 0) { return 0; }
+  return ctx->user;
+}
+
+/// A request header, case-insensitively; the first one when repeated.
+///
+/// in:      ctx   the request
+///          name  the header name ("Authorization", "x-request-id")
+/// returns: the value with surrounding whitespace removed, or "" when absent
+/// owns:    a view into the request; valid until the handler returns (copy to keep)
+/// thread:  the worker serving the request
+/// example:
+///   var id: string = rz_ctx_header(ctx, "X-Request-Id");
+export fn rz_ctx_header(ctx: RzContext*, name: string) -> string {
+  if (ctx == 0 || ctx->req == 0) { return rz_str_empty(); }
+  return rz_req_header(ctx->req, name);
+}
+
+/// Sets (or replaces) a response header. Use rz_ctx_set_cookie for Set-Cookie.
+///
+/// in:      ctx    the request
+///          name   a header token ("Cache-Control")
+///          value  no CR, LF or NUL; copied into the request arena
+/// returns: RZ_OK; RZ_E_INVALID for a bad name or value (nothing stored);
+///          RZ_E_FULL when the response already has 16 headers
+/// owns:    nothing kept from the caller
+/// thread:  the worker serving the request
+/// example:
+///   rz_ctx_set_header(ctx, "Cache-Control", "no-store");
+export fn rz_ctx_set_header(ctx: RzContext*, name: string, value: string) -> int32 {
+  if (ctx == 0 || ctx->resp == 0) { return RZ_E_USAGE; }
+  var rc: int32 = rz_resp_header_set(ctx->resp, name, value);
+  if (rc == -2) { return RZ_E_FULL; }
+  if (rc != 0) { return RZ_E_INVALID; }
+  return RZ_OK;
+}
+
+/// One field of an `application/x-www-form-urlencoded` request body (an HTML
+/// form POST), decoded: `+` is a space and `%XX` a byte.
+///
+/// in:      ctx   the request
+///          name  the field name, matched exactly after decoding
+///          out   receives the value ("" when absent); may not be 0
+/// returns: true when the body is a urlencoded form and holds the field
+/// owns:    *out is a view into the request or the request arena; valid until the
+///          handler returns (copy to keep)
+/// thread:  the worker serving the request
+/// example:
+///   var email: string = rz_str_empty();
+///   if (!rz_ctx_form(ctx, "email", &email)) { return rz_ctx_text(ctx, 400, "email?\n"); }
+export fn rz_ctx_form(ctx: RzContext*, name: string, out: string*) -> bool {
+  if (out == 0) { return false; }
+  *out = rz_str_empty();
+  if (ctx == 0 || ctx->req == 0) { return false; }
+  if (!rz_str_eq_ci(rz_req_media_type(ctx->req), "application/x-www-form-urlencoded")) { return false; }
+  return rz_query_find(ctx->req->body, name, ctx->arena, out);
 }
 
 // ---------------------------------------------------------------------------

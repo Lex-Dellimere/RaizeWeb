@@ -112,16 +112,24 @@ export fn rz_server_stop(srv: RzServer*) {
   }
 }
 
-// One worker: accept, serve, close, repeat. Exported because CreateThread needs
-// a plain function value; not part of the app-facing API.
+/// internal: server (CreateThread needs a plain function value). One worker: accept
+/// (recording the peer's IPv4 address), serve, close, repeat.
+/// in:      arg the RzServer*
+/// returns: the number of connections served
+/// owns:    each accepted socket until it is closed or detached
 export fn rz_worker_main(arg: cstring) -> uint32 {
   var srv: RzServer* = (RzServer*)arg;
   if (srv == 0) { return 1; }
   var served: int64 = 0;
   while (true) {
     if (srv->stop != 0) { break; }
-    var fd: int64 = accept(srv->listen_fd, 0, 0);
+    // sockaddr_in: family(2) port(2) addr(4) zero(8); the address bytes are a.b.c.d.
+    var addr: uint8[16];
+    var addrlen: int32 = 16;
+    var fd: int64 = accept(srv->listen_fd, (cstring)&addr[0], (cstring)&addrlen);
     if (fd < 0) { break; }   // listener closed (or a signal interrupted us)
+    var peer: uint32 = 0;
+    if (addrlen >= 8 && addr[0] == 2) { peer = *(uint32*)&addr[4]; }   // AF_INET
     // Timeouts first: a socket with no SO_RCVTIMEO is a worker pinned forever
     // by one client.
     rz_set_recv_timeout(fd, srv->opts.read_timeout_ms);
@@ -132,7 +140,7 @@ export fn rz_worker_main(arg: cstring) -> uint32 {
       // Best effort: a lost update on a peak watermark is harmless.
       srv->stats.peak_active = active;
     }
-    var w: int64 = rz_conn_serve(srv, fd);
+    var w: int64 = rz_conn_serve(srv, fd, peer);
     if (w == RZ_CONN_DETACHED) {
       // Upgraded: the socket now belongs to the hub (framework/hub).
       atomic_dec_i32(&srv->stats.active);
@@ -159,15 +167,13 @@ fn rz_server_mark_stopped(srv: RzServer*) {
   srv->listen_fd = -1;
 }
 
-// Binds, spawns the workers, joins them, and returns 0. Blocks for the life of
-// the server: stop it from another thread with rz_server_stop, or end the
-// process.
-//
-// Error returns: -1 bind/listen failed (see rz_server_last_error), -2 no
-// worker thread could be created.
-export fn rz_server_run(srv: RzServer*) -> int32 {
+/// internal: app/run, server. Binds and listens on opts.port, so a bind failure is
+/// known before anything is printed or started (A4). Clears a stop requested earlier.
+/// in:      srv the server
+/// returns: 0 bound; -1 bind/listen failed (errno in rz_server_last_error)
+/// owns:    the listening socket belongs to `srv` (closed by stop or free)
+export fn rz_server_bind(srv: RzServer*) -> int32 {
   if (srv == 0) { return -1; }
-  if (srv->handler == 0) { return -3; }   // a server with nobody to answer
   var err: int32 = 0;
   var fd: int64 = rz_listen(srv->opts.port, srv->opts.backlog, &err);
   if (fd < 0) {
@@ -176,6 +182,20 @@ export fn rz_server_run(srv: RzServer*) -> int32 {
   }
   srv->listen_fd = fd;
   srv->stop = 0;
+  return 0;
+}
+
+/// internal: app/run, server. Spawns the workers on the socket rz_server_bind made
+/// and blocks until they have all been joined (after rz_server_stop).
+/// in:      srv a bound server with a handler
+/// returns: 0 after a clean stop; -2 no worker thread could be created;
+///          -3 no handler; -4 not bound (or stopped before serving)
+/// owns:    nothing new
+export fn rz_server_serve(srv: RzServer*) -> int32 {
+  if (srv == 0) { return -1; }
+  if (srv->handler == 0) { return -3; }   // a server with nobody to answer
+  if (srv->listen_fd < 0 || srv->stop != 0) { return -4; }
+  var fd: int64 = srv->listen_fd;
 
   var workers: int32 = srv->opts.workers;
   if (workers < 1) { workers = 1; }
@@ -214,4 +234,18 @@ export fn rz_server_run(srv: RzServer*) -> int32 {
     rz_server_mark_stopped(srv);
   }
   return 0;
+}
+
+/// internal: examples that predate rz_run (rz_run itself calls rz_server_bind and
+/// rz_server_serve). Binds, spawns the workers, joins them. Blocks for the life of
+/// the server: stop it from another thread with rz_server_stop.
+/// in:      srv the server, with a handler
+/// returns: 0 after a stop; -1 bind/listen failed (see rz_server_last_error); -2 no
+///          worker thread could be created; -3 no handler
+/// owns:    nothing new
+export fn rz_server_run(srv: RzServer*) -> int32 {
+  if (srv == 0) { return -1; }
+  if (srv->handler == 0) { return -3; }
+  if (rz_server_bind(srv) != 0) { return -1; }
+  return rz_server_serve(srv);
 }
