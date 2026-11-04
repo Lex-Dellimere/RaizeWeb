@@ -56,19 +56,23 @@ export fn rz_signal_arg_put_bool(b: RzBuf*, v: bool) {
   if (v) { rz_buf_add(b, "true"); } else { rz_buf_add(b, "false"); }
 }
 
+/// Reads an event argument as an int64. Accepts a bare JSON number or a quoted
+/// one ("42"), rejects empty text, junk, a JSON-illegal leading '+', and
+/// anything outside the int64 range (via rz_str_parse_int).
+///
+/// in:      raw  the argument's raw JSON text; borrowed
+///          out  written only on success; must be non-null
+/// returns: true and `*out` set on success; false otherwise
+/// owns:    nothing
+/// thread:  the worker handling the event
+/// example:
+///   var id: int64 = 0;
+///   if (!rz_signal_arg_int(arg, &id)) { return; }
 export fn rz_signal_arg_int(raw: string, out: int64*) -> bool {
   var s: string = raw;
   if (s.length >= 2 && s.chars[0] == 34) { s = rz_str_sub(s, 1, (int64)s.length - 1); }
-  if (s.length == 0) { return false; }
-  var i: int64 = 0;
-  if (s.chars[0] == 45) { i = 1; }
-  if (i >= (int64)s.length) { return false; }
-  while (i < (int64)s.length) {
-    if (!rz_char_is_digit((int32)s.chars[i])) { return false; }
-    i = i + 1;
-  }
-  *out = rz_str_to_int(s);
-  return true;
+  if (s.length > 0 && s.chars[0] == 43) { return false; }
+  return rz_str_parse_int(s, out);
 }
 
 export fn rz_signal_arg_bool(raw: string, out: bool*) -> bool {

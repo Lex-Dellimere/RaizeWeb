@@ -153,13 +153,24 @@ export fn rz_ctx_query(ctx: RzContext*, name: string) -> string {
   return rz_query_get(ctx->req->query, name, ctx->arena);
 }
 
+/// Reads a query parameter as an int64 with strict parsing (rz_str_parse_int):
+/// a missing, empty, malformed or out-of-range value is a false return, never a
+/// sentinel number.
+///
+/// in:      ctx   the request
+///          name  the parameter name
+///          out   written only on success; must be non-null
+/// returns: true and `*out` set on success; false otherwise
+/// owns:    nothing (decoding uses the request arena)
+/// thread:  the worker serving the request
+/// example:
+///   var page: int64 = 1;
+///   if (!rz_ctx_query_int(ctx, "page", &page)) { page = 1; }
 export fn rz_ctx_query_int(ctx: RzContext*, name: string, out: int64*) -> bool {
   if (ctx == 0 || ctx->req == 0) { return false; }
   var v: string = rz_query_get(ctx->req->query, name, ctx->arena);
   if (v.length == 0) { return false; }
-  var n: int64 = rz_str_to_int(v);
-  *out = n;
-  return true;
+  return rz_str_parse_int(v, out);
 }
 
 /// Attaches the signed-in user (or any per-request principal) to the request.

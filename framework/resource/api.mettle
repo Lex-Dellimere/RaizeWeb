@@ -110,8 +110,10 @@ fn rz__api_id(ctx: RzContext*, id: int64*) -> bool {
   for i in 0..s.length {
     if (!rz_char_is_digit((int32)s.chars[i])) { return false; }
   }
-  *id = rz_str_to_int(s);
-  return *id > 0;
+  var v: int64 = 0;
+  if (!rz_str_parse_int(s, &v)) { return false; }
+  *id = v;
+  return v > 0;
 }
 
 fn rz__api_bad_id(ctx: RzContext*) -> int32 {

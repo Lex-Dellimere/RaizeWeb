@@ -88,7 +88,7 @@ export fn rz_query_count(q: string) -> int32 {
     var at_end: bool = i == n;
     var c: int32 = 0;
     if (!at_end) { c = (int32)q.chars[i]; }
-    if (at_end || c == 38 || c == 59) {
+    if (at_end || c == 38) {
       if (i > start) { count = count + 1; }
       start = i + 1;
     }
@@ -109,7 +109,7 @@ export fn rz_query_at(q: string, i: int32, arena: RzArena*, out_name: string*, o
     var at_end: bool = k == n;
     var c: int32 = 0;
     if (!at_end) { c = (int32)q.chars[k]; }
-    if (at_end || c == 38 || c == 59) {
+    if (at_end || c == 38) {
       if (k > start) {
         if (seen == i) {
           var pair: string = rz_str_sub(q, start, k);
@@ -145,7 +145,7 @@ export fn rz_query_find(q: string, name: string, arena: RzArena*, out_value: str
     var at_end: bool = k == n;
     var c: int32 = 0;
     if (!at_end) { c = (int32)q.chars[k]; }
-    if (at_end || c == 38 || c == 59) {
+    if (at_end || c == 38) {
       if (k > start) {
         var pair: string = rz_str_sub(q, start, k);
         var eq: int64 = rz_str_find_byte(pair, 61);
@@ -282,6 +282,23 @@ export fn rz_path_normalize(raw: string, arena: RzArena*) -> string {
   if (!rz_query_at(q, 3, arena, &n1, &v1)) { rz_arena_free(arena); return 12; }
   if (!rz_str_eq(n1, "flag")) { rz_arena_free(arena); return 13; }
   if (rz_query_at(q, 9, arena, &n1, &v1)) { rz_arena_free(arena); return 14; }
+  rz_arena_free(arena);
+  return 0;
+}
+
+@test fn t_rz_query_semicolon() -> int32 {
+  var arena: RzArena* = rz_arena_new();
+  if (arena == 0) { return 1; }
+  // ';' is not a separator: one field `a` whose value is "1;b=2"
+  if (rz_query_count("a=1;b=2") != 1) { rz_arena_free(arena); return 2; }
+  if (!rz_str_eq(rz_query_get("a=1;b=2", "a", arena), "1;b=2")) { rz_arena_free(arena); return 3; }
+  var v: string = rz_str_empty();
+  if (rz_query_find("a=1;b=2", "b", arena, &v)) { rz_arena_free(arena); return 4; }
+  var n1: string = rz_str_empty();
+  var v1: string = rz_str_empty();
+  if (!rz_query_at("a=1;b=2", 0, arena, &n1, &v1)) { rz_arena_free(arena); return 5; }
+  if (!rz_str_eq(n1, "a") || !rz_str_eq(v1, "1;b=2")) { rz_arena_free(arena); return 6; }
+  if (rz_query_at("a=1;b=2", 1, arena, &n1, &v1)) { rz_arena_free(arena); return 7; }
   rz_arena_free(arena);
   return 0;
 }

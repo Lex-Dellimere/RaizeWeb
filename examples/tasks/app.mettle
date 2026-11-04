@@ -122,7 +122,8 @@ fn task_json_into(buf: RzBuf*, t: RzTask*, comma: bool) {
 
 fn task_id_from_path(ctx: RzContext*) -> int32 {
   var raw: string = rz_req_param(ctx->req, "id");
-  var v: int64 = rz_str_to_int(raw);
+  var v: int64 = 0;
+  if (!rz_str_parse_int(raw, &v)) { return -1; }
   if (v <= 0 || v > 2147483647) { return -1; }
   return (int32)v;
 }

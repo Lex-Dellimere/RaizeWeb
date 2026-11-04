@@ -3,7 +3,7 @@
 - **Project:** raize_web
 - **Kind:** bug
 - **Severity:** low
-- **Status:** open; queued as B2
+- **Status:** fixed: query/form splitting is on `&` only; `t_rz_query_semicolon` covers `a=1;b=2`.
 
 ## What happens
 `framework/context/query.mettle` splits pairs on `;` as well as `&`, so `rz_query_get`,

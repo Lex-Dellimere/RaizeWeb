@@ -11,8 +11,8 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 
 | # | Kind | Project | Severity | Item | Status |
 |---|---|---|---|---|---|
-| [001](001-str-to-int-unbounded.md) | bug | raize_web | medium | `rz_str_to_int` has no bound: `rz_ctx_query_int` accepts junk as -1 and wraps on overflow | open; queued as B1 (first fix when work resumes) |
-| [002](002-form-semicolon-separator.md) | bug | raize_web | low | Query strings and form bodies are also split on `;` | open; queued as B2 |
+| [001](001-str-to-int-unbounded.md) | bug | raize_web | medium | `rz_str_to_int` has no bound: `rz_ctx_query_int` accepts junk as -1 and wraps on overflow | fixed (strict `rz_str_parse_int`) |
+| [002](002-form-semicolon-separator.md) | bug | raize_web | low | Query strings and form bodies are also split on `;` | fixed (split on `&` only) |
 | [003](003-clear-cookie-path.md) | limitation | raize_web | low | `rz_ctx_clear_cookie` takes no options (only `Path=/`, can't repeat Secure/SameSite) | open |
 | [004](004-sigterm-live-clients.md) | unverified | raize_web | medium | Shutdown on SIGTERM with live keep-alive or WebSocket clients is unverified | open; P3-C fixture asserts exit 0 within 3 s with a connected Signal |
 | [005](005-channels-not-wired.md) | missing | raize_web | medium | `rz_channel` records a declaration but no `/socket/websocket` route is derived yet | open; P3-C (stopped before it started; tree clean at 32bf689) |

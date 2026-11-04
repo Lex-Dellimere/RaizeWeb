@@ -3,7 +3,7 @@
 - **Project:** raize_web
 - **Kind:** bug
 - **Severity:** medium
-- **Status:** open; queued as B1 (first fix when work resumes)
+- **Status:** fixed: added strict `rz_str_parse_int` (sign, digits, int64 overflow-checked); `rz_ctx_query_int`, `rz_signal_arg_int`, resource id and tasks path id use it; `rz_str_to_int` wraps it (-1 on error). Unit tests added.
 
 ## What happens
 `rz_str_to_int` returns -1 for non-digits and never checks overflow
