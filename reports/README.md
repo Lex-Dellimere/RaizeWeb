@@ -12,7 +12,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 |---|---|---|---|---|---|
 | [001](001-str-to-int-unbounded.md) | bug | raize_web | medium | `rz_str_to_int` has no bound: `rz_ctx_query_int` accepts junk as -1 and wraps on overflow | open; queued as B1 (first fix when work resumes) |
 | [002](002-form-semicolon-separator.md) | bug | raize_web | low | Query strings and form bodies are also split on `;` | open; queued as B2 |
-| [003](003-clear-cookie-path.md) | limitation | raize_web | low | `rz_ctx_clear_cookie` only clears cookies set with `Path=/` | open |
+| [003](003-clear-cookie-path.md) | limitation | raize_web | low | `rz_ctx_clear_cookie` takes no options (only `Path=/`, can't repeat Secure/SameSite) | open |
 | [004](004-sigterm-live-clients.md) | unverified | raize_web | medium | Shutdown on SIGTERM with live keep-alive or WebSocket clients is unverified | open; P3-C fixture asserts exit 0 within 3 s with a connected Signal |
 | [005](005-channels-not-wired.md) | missing | raize_web | medium | `rz_channel` records a declaration but no `/socket/websocket` route is derived yet | open; P3-C (stopped before it started; tree clean at 32bf689) |
 | [006](006-per-user-signals.md) | missing | raize_web | high | Signals cannot be per-user: `mount` gets no request, session or user, and the Signal socket has no guard | open; P3-C (DECISIONS A9, A10, F5) |
@@ -37,6 +37,9 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [025](025-db-change-pushes.md) | missing | raize_web | low | Signals cannot be pushed from database changes | open; waits on MeoSQL change notifications (asked; message to MeoSQL session expired undelivered) |
 | [026](026-event-loop-portability.md) | limitation | raize_web | low | The event loop (framework/poll) is Linux x86-64 only (raw syscall numbers) | won't fix: bridge until the BEAM/OTP-style Mettle runtime owns I/O (docs/design/realtime.md §4) |
 | [027](027-docs-reference-guide.md) | missing | raize_web | high | Most exports lack contract docs; no reference pages or guide yet | open; P5-P7 (D5: `///` contracts on every export, doccheck in lint, generated reference, docs/guide.md) |
+| [028](028-rate-limit-middleware.md) | missing | raize_web | medium | No per-peer rate-limiting middleware (`rz_use_rate_limit`) | open |
+| [029](029-guards-before-405.md) | limitation | raize_web | low | Guards run before the router's method check (guard answer instead of 405) | open |
 
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
-(001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here).
+(001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its
+`F01-raize-missing.md` lists the raize features it needs, all tracked here).
