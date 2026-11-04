@@ -7,10 +7,15 @@
 //   GET /todos          the page, rendered on the server
 //   /signal/websocket   events in, diffs out
 //
+// Pushes: a ticker thread publishes Tick(n) to "todos" every second (every
+// open page shows the server's uptime), and Nudge publishes Nudged(1) to
+// "todos:nudges", which every page subscribed to in mount.
+//
 // Run from the repository root:  ./build/todos 8070  then open /todos
 
 import "std/io";
 import "std/mem";
+import "std/thread";
 import "../../framework/str/str";
 import "../../framework/context/context";
 import "../../framework/router/router";
@@ -34,9 +39,12 @@ struct Todos {
   count: int32;
   next_id: int32;
   draft: string;        // owned, may be empty
+  uptime: int32;        // seconds, from Tick
+  nudges: int32;        // Nudged messages received
 }
 
-enum TodosMsg { Draft(string), Add, Toggle(int32), Remove(int32), ClearDone }
+// From the page: Draft..ClearDone, Nudge. From the server: Tick, Nudged.
+enum TodosMsg { Draft(string), Add, Toggle(int32), Remove(int32), ClearDone, Nudge, Tick(int32), Nudged(int32) }
 
 // ---- state ----------------------------------------------------------------
 
@@ -76,6 +84,7 @@ fn todos_index(s: Todos*, id: int32) -> int32 {
 }
 
 fn todos_mount(s: Todos*) {
+  rz_signal_subscribe("todos:nudges");
   s->next_id = 1;
   s->draft = raize_str_empty();
   todos_add(s, "Write a Signal");
@@ -104,6 +113,9 @@ fn todos_update(s: Todos*, msg: TodosMsg) {
         i = i - 1;
       }
     }
+    case Nudge: { TodosMsg__publish("todos:nudges", Nudged(1)); }
+    case Tick(n): { s->uptime = n; }
+    case Nudged(k): { s->nudges = s->nudges + k; }
   }
 }
 
@@ -154,6 +166,11 @@ fn todos_view(s: Todos*) -> RzHtml* {
         </ul>
         <button class="clear" on:click={ClearDone}>Clear done</button>
       }}
+      <footer>
+        <span>server up {s->uptime}s</span>
+        <button class="nudge" on:click={Nudge}>Nudge every open page</button>
+        <span class="nudges">{s->nudges} nudges</span>
+      </footer>
     </main>
   """;
 }
@@ -176,9 +193,22 @@ li {{ display: flex; border-bottom: 1px solid var(--line); }
 .done .check {{ text-decoration: line-through; color: var(--muted); }
 .remove {{ border: 0; background: none; color: var(--muted); font-size: 18px; }
 .empty {{ color: var(--muted); }
+footer {{ display: flex; gap: 12px; align-items: center; margin-top: 24px; color: var(--muted); font-size: 13px; }
+.nudge {{ border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; padding: 4px 10px; }
 </style>";
 
 var g_router: RzRouter* = 0;
+var g_stop: int32 = 0;
+
+fn ticker(arg: cstring) -> uint32 {
+  var n: int32 = 0;
+  while (atomic_compare_exchange_i32(&g_stop, 0, 0) == 0) {
+    thread_sleep_ms(1000);
+    n = n + 1;
+    TodosMsg__publish("todos", Tick(n));
+  }
+  return 0;
+}
 
 fn h_todos(ctx: RzContext*) -> int32 {
   return rz_signal_page(ctx, "todos", STYLE);
@@ -215,8 +245,12 @@ fn main(argc: int32, argv: cstring*) -> int32 {
   opts.port = port;
   var srv: RzServer* = rz_server_new(opts);
   if (srv == 0 || rz_server_set_handler(srv, &handle) != 0) { println("todos: server failed"); return 3; }
+  var th: int64 = CreateThread(0, 0, &ticker, 0, 0, 0);
   println("todos: listening on 127.0.0.1:{port}");
   var rc: int32 = rz_server_run(srv);
+  atomic_exchange_i32(&g_stop, 1);
+  thread_join_infinite(th);
+  thread_close(th);
   rz_hub_free(hub);
   rz_chan_router_free(g_chans);
   rz_server_free(srv);

@@ -16,6 +16,8 @@
 //   fn NameMsg__signal(chans, name, mount, view, leave) -> int32
 //       registers the Signal; mount/view/leave are type-checked against the
 //       state type update() takes
+//   fn NameMsg__publish(topic: string, m: NameMsg) -> bool
+//       any thread: delivers m to every instance listening on topic
 //
 // Payload types: none, int32, int64, bool, string. A string payload is a view
 // valid during update(); copy it to keep it.
@@ -29,12 +31,13 @@ fn rzpp_payload_ok(t: string) -> bool {
   return raize_str_eq(t, "int32") || raize_str_eq(t, "int64") || raize_str_eq(t, "bool") || raize_str_eq(t, "string");
 }
 
-fn rzpp_emit_put(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: RaizeStrList*) {
+// NameMsg__json(b, m): appends ["Variant", payload]. __put and __publish use it.
+fn rzpp_emit_json(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: RaizeStrList*) {
   raize_buf_add(out, "fn ");
   raize_buf_add(out, name);
-  raize_buf_add(out, "__put(h: RzHtml*, i: int32, m: ");
+  raize_buf_add(out, "__json(b: RaizeBuf*, m: ");
   raize_buf_add(out, name);
-  raize_buf_add(out, ") {{\n  var b: RaizeBuf* = raize_buf_new();\n  match (m) {{\n");
+  raize_buf_add(out, ") {{\n  match (m) {{\n");
   var k: int64 = 0;
   while (k < vnames->len) {
     var v: string = vnames->items[k];
@@ -59,7 +62,30 @@ fn rzpp_emit_put(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: Ra
     raize_buf_free(open);
     k = k + 1;
   }
-  raize_buf_add(out, "  }\n  rz_html_put_text(h, i, raize_buf_str(b));\n  raize_buf_free(b);\n}\n");
+  raize_buf_add(out, "  }\n}\n");
+}
+
+// NameMsg__put(h, i, m): the message as an attribute value (on:event={...}).
+fn rzpp_emit_put(out: RaizeBuf*, name: string) {
+  raize_buf_add(out, "fn ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, "__put(h: RzHtml*, i: int32, m: ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, ") {{\n  var b: RaizeBuf* = raize_buf_new();\n  ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, "__json(b, m);\n  rz_html_put_text(h, i, raize_buf_str(b));\n  raize_buf_free(b);\n}\n");
+}
+
+// NameMsg__publish(topic, m): any thread; every instance listening on topic
+// gets m through its update().
+fn rzpp_emit_publish(out: RaizeBuf*, name: string) {
+  raize_buf_add(out, "fn ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, "__publish(topic: string, m: ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, ") -> bool {{\n  var b: RaizeBuf* = raize_buf_new();\n  ");
+  raize_buf_add(out, name);
+  raize_buf_add(out, "__json(b, m);\n  var ok: bool = rz_signal_publish(topic, raize_buf_str(b));\n  raize_buf_free(b);\n  return ok;\n}\n");
 }
 
 fn rzpp_emit_decode(out: RaizeBuf*, name: string, vnames: RaizeStrList*, vtypes: RaizeStrList*) {
@@ -220,12 +246,14 @@ export fn rzpp_messages(g: RzppGen*, out: RaizeBuf*) {
         k = k + 1;
       }
       raize_strlist_free(parts);
-      rzpp_emit_put(out, name, vnames, vtypes);
+      rzpp_emit_json(out, name, vnames, vtypes);
+      rzpp_emit_put(out, name);
       rzpp_emit_decode(out, name, vnames, vtypes);
       var ufn: string = raize_str_empty();
       var ustate: string = raize_str_empty();
       if (vnames->len > 0 && rzpp_find_update(src, name, &ufn, &ustate)) {
         rzpp_emit_signal(out, name, ufn, ustate, vnames->items[0], vtypes->items[0]);
+        rzpp_emit_publish(out, name);
       }
       raize_strlist_push(g->enums, name);
       raize_strlist_free(vnames);

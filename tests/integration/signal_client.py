@@ -88,16 +88,47 @@ class Signal:
         self.c.ref = 0
         self.c.join_refs = {}
         self.topic = "signal:" + name
+        self.pushes = 0
+        self.tree = None
         ref = self.c.send(self.topic, "phx_join", {})
         self.join = self.c.reply_to(ref)
         self.tree = self.join[4].get("response", {}).get("rendered")
 
+    def frame(self):
+        """Next message; pushed diffs are merged on the way, like signal.js."""
+        m = self.c.next(skip_ticks=False)
+        if isinstance(m, list) and m[3] == "diff" and m[2] == self.topic:
+            self.pushes += 1
+            merge(self.tree, m[4]["diff"])
+        return m
+
+    def reply_to(self, ref):
+        while True:
+            m = self.frame()
+            if isinstance(m, list) and m[3] == "phx_reply" and m[1] == ref:
+                return m
+
     def event(self, *msg):
         ref = self.c.send(self.topic, "event", list(msg))
-        reply = self.c.reply_to(ref)[4]
+        reply = self.reply_to(ref)[4]
         if reply["status"] == "ok" and reply["response"].get("diff"):
             merge(self.tree, reply["response"]["diff"])
         return reply
+
+    def wait_for(self, text, seconds):
+        """Reads pushes until the page contains `text` (or time runs out)."""
+        import time
+        deadline = time.time() + seconds
+        self.c.s.settimeout(0.3)
+        try:
+            while text not in self.page() and time.time() < deadline:
+                try:
+                    self.frame()
+                except (socket.timeout, TimeoutError):
+                    pass
+        finally:
+            self.c.s.settimeout(3)
+        return text in self.page()
 
     def page(self):
         return html(self.tree)
@@ -154,7 +185,20 @@ def main():
 
     b = Signal()
     check("a second session has its own state", b.titles() == ["Write a Signal", "Ship it"] and a.titles() == ["again"], (b.titles(), a.titles()))
+
+    # Pushes: messages published by the server, applied through update().
+    check("ticker push reaches a page (Tick via TodosMsg__publish)", b.wait_for("server up 1s", 2.5) or b.wait_for("server up 2s", 1.5), b.pushes)
+    r = a.event("Nudge")
+    check("Nudge replies with no diff (delivery is a push)", r["status"] == "ok" and r["response"]["diff"] == {}, r)
+    check("a nudge reaches the other page", b.wait_for("1 nudges", 2), b.page()[-200:])
+    check("and the sender too (publish includes self)", a.wait_for("1 nudges", 2), a.page()[-200:])
+    pushes_before = b.pushes
     b.close()
+    a.event("Nudge")
+    check("publishing after a page closed is fine", a.wait_for("2 nudges", 2))
+    c = Signal()
+    check("a new page starts at 0 nudges (state is per page)", "0 nudges" in c.page(), c.page()[-200:])
+    c.close()
 
     nope = Signal("nope")
     check("unknown signal -> join error", nope.join[4]["status"] == "error", nope.join)

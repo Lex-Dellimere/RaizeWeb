@@ -143,11 +143,13 @@ enum, `update`, and a `view` that returns an `html"""..."""` literal whose `{}`
 holes, loops, branches, components and `on:event={Msg(...)}` handlers are
 all Mettle. `tools/rzpp` compiles the literals (until the compiler has tagged
 literals), the server sends Phoenix-format diffs, and `framework/signal/
-signal.js` patches the DOM. `examples/todos` is a complete one:
+signal.js` patches the DOM. The server can push too: a message published
+with the generated `TodosMsg__publish("topic", Tick(n))`, from any thread,
+goes through the same `update` on every page subscribed to that topic. `examples/todos` is a complete one:
 
 ```bash
 make build/todos && ./build/todos 8070    # open http://127.0.0.1:8070/todos
-make signal-test                          # rzpp diagnostics + 21 protocol checks
+make signal-test                          # rzpp diagnostics + 27 protocol checks
 ```
 
 See `docs/design/views.md`.

@@ -241,7 +241,25 @@ statics/dynamics renderer in `framework/signal` is shared by both.
   Generated code sits on the literal's first line, so a Mettle type error
   inside a hole points at the `return html"""` line, not the exact hole line.
 
-Not built yet: pushes from the server without an event (Phoenix's
-`handle_info`, for example a ticker or a database change), keyed lists,
+**Pushes (built):** a server-side event is just another variant of the
+Signal's message enum, handled by the same `update`. There is no separate
+`handle_info`:
+
+```mettle
+enum TodosMsg { ..., Nudge, Tick(int32), Nudged(int32) }
+
+fn todos_mount(s: Todos*) { rz_signal_subscribe("todos:nudges"); }
+// in update:  case Nudge: { TodosMsg__publish("todos:nudges", Nudged(1)); }
+// any thread: TodosMsg__publish("todos", Tick(n));   // every page is on its own name
+```
+
+`NameMsg__publish` is generated, typed, and safe from any thread. Delivery
+runs on the hub thread: decode, update, view, and a `"diff"` push. A
+subscription belongs to the running instance (mount or update), as a
+process subscribes itself. The first-GET render subscribes nothing. Publish
+includes the sender. A message an instance cannot decode is ignored, so
+Signals with different enums can share a topic.
+
+Not built yet: keyed lists,
 uploads, multiple Signals sharing one socket (each page joins its own
 topic, which already works), and the compiler-native `html"""` literal.

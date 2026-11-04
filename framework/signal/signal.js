@@ -2,8 +2,9 @@
 //
 // Speaks Phoenix's v2 channel protocol on /signal/websocket, joins
 // "signal:<name>" for #rz-root[data-signal], keeps the rendered tree the
-// server sends, merges each diff into it, re-renders to HTML and morphs the
-// DOM (keeping focus and the value of the input being typed in).
+// server sends, merges each diff into it (replies to events, and "diff"
+// pushes for messages the server published), re-renders to HTML and morphs
+// the DOM (keeping focus and the value of the input being typed in).
 //
 // Events: an element with rz-click / rz-input / rz-change / rz-submit holds a
 // message as JSON, ["Variant"] or ["Variant", payload]. A one-element message
@@ -119,6 +120,10 @@
         var cb = pending[m[1]];
         delete pending[m[1]];
         cb(m[4]);
+      } else if (m[3] === "diff" && m[2] === topic && tree) {
+        // A push: the server ran update() for a published message.
+        var d = m[4].diff;
+        if (d && Object.keys(d).length) { merge(tree, d); paint(); }
       }
     };
     ws.onclose = function () {

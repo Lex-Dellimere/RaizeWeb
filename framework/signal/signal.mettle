@@ -40,40 +40,9 @@ import "../context/context";
 import "../channel/channel";
 import "html";
 import "render";
+import "inst";
 
-export const RZ_SIGNAL_MAX: int32 = 32;
 const RZ_SIGNAL_JS: string = import_str "signal.js";
-
-// State pointers are erased to rawptr here; NameMsg__signal checked the real
-// types when the app registered the Signal.
-export struct RzSignalDef {
-  name: string;
-  size: int64;
-  mount: fn(rawptr) -> void;
-  handle: fn(rawptr, string, string) -> int32;   // decode + update
-  view: fn(rawptr) -> RzHtml*;
-  leave: fn(rawptr) -> void;
-}
-
-struct RzSignalInst {
-  def: RzSignalDef*;
-  state: rawptr;
-  last: RzHtml*;
-}
-
-// Written while the app starts (before the server runs), read-only after.
-var g_rz_signals: RzSignalDef* = 0;
-var g_rz_signal_count: int32 = 0;
-var g_rz_signal_arena: RzArena* = 0;     // hub thread: event decoding
-
-fn rz_signal_find(name: string) -> RzSignalDef* {
-  var i: int32 = 0;
-  while (i < g_rz_signal_count) {
-    if (raize_str_eq(g_rz_signals[i].name, name)) { return &g_rz_signals[i]; }
-    i = i + 1;
-  }
-  return 0;
-}
 
 // ---- message payload helpers (called by rzpp-generated code) --------------
 
@@ -111,8 +80,7 @@ export fn rz_signal_arg_bool(raw: string, out: bool*) -> bool {
 // A JSON string payload, unescaped. Valid until the next event.
 export fn rz_signal_arg_str(raw: string, out: string*) -> bool {
   if (raw.length < 2 || raw.chars[0] != 34 || raw.chars[raw.length - 1] != 34) { return false; }
-  if (g_rz_signal_arena == 0) { g_rz_signal_arena = rz_arena_new(); }
-  *out = rz_json_unescape(raize_str_sub(raw, 1, (int64)raw.length - 1), g_rz_signal_arena);
+  *out = rz_json_unescape(raize_str_sub(raw, 1, (int64)raw.length - 1), rz_signal_arena());
   return true;
 }
 
@@ -124,16 +92,15 @@ fn rz_signal_join(ctx: RzChanCtx*, payload: string) -> int32 {
     rz_chan_reply_json(ctx, "{{\"reason\":\"no such signal\"}");
     return 1;
   }
-  var inst: RzSignalInst* = (RzSignalInst*)calloc(1, sizeof(RzSignalInst));
-  var state: rawptr = calloc(1, def->size);
-  if (inst == 0 || state == 0) {
+  var inst: RzSignalInst* = rz_signal_inst_new(def, ctx);
+  if (inst == 0) {
     rz_chan_reply_json(ctx, "{{\"reason\":\"out of memory\"}");
     return 1;
   }
-  inst->def = def;
-  inst->state = state;
-  def->mount(state);
-  inst->last = def->view(state);
+  rz_signal_set_current(inst);
+  def->mount(inst->state);
+  rz_signal_set_current(0);
+  inst->last = def->view(inst->state);
   var b: RaizeBuf* = raize_buf_new();
   raize_buf_add(b, "{{\"rendered\":");
   rz_html_json(inst->last, b);
@@ -150,39 +117,19 @@ fn rz_signal_in(ctx: RzChanCtx*, event: string, payload: string) -> int32 {
     rz_chan_reply_json(ctx, "{{\"reason\":\"unknown event\"}");
     return 1;
   }
-  if (g_rz_signal_arena == 0) { g_rz_signal_arena = rz_arena_new(); }
-  rz_arena_reset(g_rz_signal_arena);
-  var name_raw: string = raize_str_empty();
-  var value: string = raize_str_empty();
-  var name: string = raize_str_empty();
-  if (!rz_json_array_at(payload, 0, &name_raw) || !rz_signal_arg_str(name_raw, &name)) {
-    rz_chan_reply_json(ctx, "{{\"reason\":\"bad event\"}");
-    return 1;
-  }
-  rz_json_array_at(payload, 1, &value);
-  if (inst->def->handle(inst->state, name, value) != 0) {
-    rz_chan_reply_json(ctx, "{{\"reason\":\"bad message\"}");
-    return 1;
-  }
-  var next: RzHtml* = inst->def->view(inst->state);
   var b: RaizeBuf* = raize_buf_new();
-  raize_buf_add(b, "{{\"diff\":");
-  if (!rz_html_diff(inst->last, next, b)) { raize_buf_add(b, "{{}"); }
-  raize_buf_add_byte(b, 125);
-  rz_chan_reply_json(ctx, raize_buf_str(b));
+  var changed: bool = false;
+  var rc: int32 = rz_signal_apply(inst, payload, b, &changed);
+  if (rc == 1) { rz_chan_reply_json(ctx, "{{\"reason\":\"bad event\"}"); }
+  if (rc == 2) { rz_chan_reply_json(ctx, "{{\"reason\":\"bad message\"}"); }
+  if (rc == 0) { rz_chan_reply_json(ctx, raize_buf_str(b)); }
   raize_buf_free(b);
-  rz_html_free(inst->last);
-  inst->last = next;
+  if (rc != 0) { return 1; }
   return 0;
 }
 
 fn rz_signal_leave(ctx: RzChanCtx*) {
-  var inst: RzSignalInst* = (RzSignalInst*)ctx->state;
-  if (inst == 0) { return; }
-  inst->def->leave(inst->state);
-  rz_html_free(inst->last);
-  free(inst->state);
-  free((rawptr)inst);
+  rz_signal_inst_free((RzSignalInst*)ctx->state);
   ctx->state = 0;
 }
 
@@ -191,20 +138,9 @@ fn rz_signal_leave(ctx: RzChanCtx*) {
 // Returns 0, or -1 when the table is full or the name is taken.
 export fn rz_signal_define_raw(chans: RzChanRouter*, name: string, size: int64, mount: fn(rawptr) -> void, handle: fn(rawptr, string, string) -> int32, view: fn(rawptr) -> RzHtml*, leave: fn(rawptr) -> void) -> int32 {
   if (chans == 0 || name.length == 0 || rz_signal_find(name) != 0) { return -1; }
-  if (g_rz_signals == 0) {
-    g_rz_signals = (RzSignalDef*)calloc((int64)RZ_SIGNAL_MAX, sizeof(RzSignalDef));
-    if (g_rz_signals == 0) { return -1; }
-    if (rz_chan_define(chans, "signal:*", &rz_signal_join, &rz_signal_in, &rz_signal_leave) != 0) { return -1; }
-  }
-  if (g_rz_signal_count >= RZ_SIGNAL_MAX) { return -1; }
-  var d: RzSignalDef* = &g_rz_signals[g_rz_signal_count];
-  d->name = name;
-  d->size = size;
-  d->mount = mount;
-  d->handle = handle;
-  d->view = view;
-  d->leave = leave;
-  g_rz_signal_count = g_rz_signal_count + 1;
+  var first: bool = rz_signal_find_any() == false;
+  if (rz_signal_add_def(chans->hub, name, size, mount, handle, view, leave) != 0) { return -1; }
+  if (first && rz_chan_define(chans, "signal:*", &rz_signal_join, &rz_signal_in, &rz_signal_leave) != 0) { return -1; }
   return 0;
 }
 
