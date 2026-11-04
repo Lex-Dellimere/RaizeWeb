@@ -3,17 +3,16 @@
 //
 //   ./mettle-build/bin/mettle test tests/unit/config_test.mettle
 //
-// The environment and the filesystem are injected. The compile-time
-// interpreter cannot call getenv/dir_exists (it stubs C functions), so the
-// tests install a table-backed env provider and a boolean dir provider. The
-// production providers are exercised by the native probe, not here.
+// The environment is injected. The compile-time interpreter cannot call getenv
+// (it stubs C functions), so the tests install a table-backed env provider. The
+// production provider is exercised by tests/integration/config.sh.
 
 import "std/mem";
 import "../../framework/str/str";
 import "../../framework/config/config";
 
-// The config module owns the test tables (see env.mettle / validate.mettle):
-// the interpreter cannot call getenv/dir_exists and drops string arguments
+// The config module owns the test table (see env.mettle): the interpreter
+// cannot call getenv and drops string arguments
 // across indirect calls, so tests populate a table through normal calls.
 fn t_errs(e: RzConfigErrors*) {
   rz_config_errors_reset(e);
@@ -32,11 +31,8 @@ fn t_errs(e: RzConfigErrors*) {
   if (rz_config_keepalive(&c) != 100) { return 5; }
   if (rz_config_read_timeout_ms(&c) != 10000) { return 6; }
   if (rz_config_cache_max_age(&c) != 60) { return 7; }
-  if (!rz_str_eq(rz_config_bind(&c), "0.0.0.0")) { return 8; }
-  if (!rz_str_eq(rz_config_static_root(&c), "public")) { return 9; }
-  if (!rz_str_eq(rz_config_template_root(&c), "templates")) { return 10; }
   if (!rz_str_eq(rz_config_allow_origin(&c), "*")) { return 11; }
-  if (!rz_str_eq(rz_config_store_dsn(&c), "")) { return 12; }
+  if (!rz_str_eq(rz_config_trusted_proxy(&c), "")) { return 12; }
   if (!rz_str_eq(rz_config_env(&c), "dev")) { return 13; }
   if (rz_config_buf_cap(&c) != 16384) { return 14; }   // 8192 + 8192 slack
   if (rz_config_frozen(&c)) { return 15; }
@@ -68,34 +64,28 @@ fn t_errs(e: RzConfigErrors*) {
 
 @test fn t_env_all_names() -> int32 {
   rz_config_env_test_begin();
-  rz_config_env_test_set("RAIZE_BIND_ADDR", "127.0.0.1");
   rz_config_env_test_set("RAIZE_PORT", "9000");
   rz_config_env_test_set("RAIZE_WORKERS", "8");
   rz_config_env_test_set("RAIZE_MAX_HEADER_BYTES", "4096");
   rz_config_env_test_set("RAIZE_MAX_BODY_BYTES", "4096");
   rz_config_env_test_set("RAIZE_KEEPALIVE_MAX", "7");
   rz_config_env_test_set("RAIZE_READ_TIMEOUT_MS", "250");
-  rz_config_env_test_set("RAIZE_STATIC_ROOT", "www");
-  rz_config_env_test_set("RAIZE_TEMPLATE_ROOT", "tpl");
   rz_config_env_test_set("RAIZE_CACHE_MAX_AGE", "0");
   rz_config_env_test_set("RAIZE_ALLOWED_ORIGIN", "https://example.test");
-  rz_config_env_test_set("RAIZE_STORE_DSN", "mem://x");
+  rz_config_env_test_set("RAIZE_TRUSTED_PROXY", "10.0.0.2");
   var c: RzConfig = rz_config_default();
   var e: RzConfigErrors;
   t_errs(&e);
   if (rz_config_from_env(&c, &e) != 0) { return 1; }
-  if (!rz_str_eq(rz_config_bind(&c), "127.0.0.1")) { return 2; }
   if (rz_config_port(&c) != 9000) { return 3; }
   if (rz_config_workers(&c) != 8) { return 4; }
   if (rz_config_max_header_bytes(&c) != 4096) { return 5; }
   if (rz_config_max_body(&c) != 4096) { return 6; }
   if (rz_config_keepalive(&c) != 7) { return 7; }
   if (rz_config_read_timeout_ms(&c) != 250) { return 8; }
-  if (!rz_str_eq(rz_config_static_root(&c), "www")) { return 9; }
-  if (!rz_str_eq(rz_config_template_root(&c), "tpl")) { return 10; }
   if (rz_config_cache_max_age(&c) != 0) { return 11; }
   if (!rz_str_eq(rz_config_allow_origin(&c), "https://example.test")) { return 12; }
-  if (!rz_str_eq(rz_config_store_dsn(&c), "mem://x")) { return 13; }
+  if (!rz_str_eq(rz_config_trusted_proxy(&c), "10.0.0.2")) { return 13; }
   return 0;
 }
 
@@ -224,19 +214,19 @@ fn t_errs(e: RzConfigErrors*) {
   return 0;
 }
 
-@test fn t_validate_roots() -> int32 {
-  rz_config_dir_test_set(false);
+@test fn t_trusted_proxy_and_dead_keys() -> int32 {
   var c: RzConfig = rz_config_default();
-  if (rz_config_validate_roots_code(&c) != RZ_CFG_E_STATIC_ROOT_MISSING) { return 1; }
   var e: RzConfigErrors;
   t_errs(&e);
-  if (rz_config_validate_roots(&c, &e) != -1) { return 2; }
-  if (rz_config_error_count(&e) != 2) { return 3; }   // both roots missing
-  if (!rz_str_contains(rz_config_error_text(&e, 0), "RAIZE_STATIC_ROOT")) { return 4; }
-
-  rz_config_dir_test_set(true);
-  if (rz_config_validate_roots_code(&c) != RZ_CFG_OK) { return 5; }
-  rz_config_dir_test_clear();
+  if (rz_config_set_e(&c, "trusted_proxy", "10.0.0", &e) != RZ_CFG_E_PROXY) { return 1; }
+  if (!rz_str_contains(rz_config_error_text(&e, 0), "IPv4")) { return 2; }
+  if (rz_config_set(&c, "trusted_proxy", "127.0.0.1") != RZ_CFG_OK) { return 3; }
+  if (!rz_str_eq(rz_config_trusted_proxy(&c), "127.0.0.1")) { return 4; }
+  // removed keys (D2/D6): nothing honoured them, so they are unknown now
+  if (rz_config_set(&c, "static_root", "www") != RZ_CFG_E_UNKNOWN_KEY) { return 5; }
+  if (rz_config_set(&c, "template_root", "tpl") != RZ_CFG_E_UNKNOWN_KEY) { return 6; }
+  if (rz_config_set(&c, "bind_addr", "0.0.0.0") != RZ_CFG_E_UNKNOWN_KEY) { return 7; }
+  if (rz_config_set(&c, "store_dsn", "x") != RZ_CFG_E_UNKNOWN_KEY) { return 8; }
   return 0;
 }
 

@@ -2,7 +2,6 @@
 //
 // ## What is checked
 //
-//     bind_addr            non-empty
 //     port                 1..65535
 //     workers              1..64          (the @parallel runtime cap)
 //     max_body             1024..64 MiB   hard cap
@@ -10,49 +9,19 @@
 //     keepalive_max        >= 1
 //     read_timeout_ms      >= 1
 //     cache_max_age        >= 0
-//     static_root          non-empty
-//     template_root        non-empty
 //     allowed_origin       non-empty
 //     env                  non-empty
 //
-// Non-empty is the policy here; existence is a separate call
-// (`rz_config_validate_roots`) because it needs the filesystem and because a
-// root only has to exist when the module that reads it is mounted:
-//
-//     static_root    framework/static realpaths it in rz_static_new()
-//     template_root  framework/template loads from it in rz_template_load()
-//
-// Both modules ship in raize, so a typical app calls `rz_config_validate_roots`
-// too. An app that mounts neither may skip it. Validation refuses after
-// rz_config_freeze: a post-freeze call means the startup ordering is wrong.
+// trusted_proxy is checked when it is applied (an IPv4 address or unset).
+// Validation refuses after rz_config_freeze: a post-freeze call means the
+// startup ordering is wrong.
 //
 // Every message names the variable (RAIZE_*) and the allowed range, so an
 // operator can fix it from the log line alone.
 
 import "std/mem";
-import "std/dir";
 import "../str/str";
 import "types";
-
-// Test hook: the interpreter cannot call dir_exists. A normal-call setter is
-// used instead of a function pointer because the interpreter drops `string`
-// arguments across indirect calls (see env.mettle). Production never sets it.
-var g_rz_cfg_dir_test: bool = false;
-var g_rz_cfg_dir_test_ok: bool = true;
-
-export fn rz_config_dir_test_set(ok: bool) {
-  g_rz_cfg_dir_test = true;
-  g_rz_cfg_dir_test_ok = ok;
-}
-
-export fn rz_config_dir_test_clear() {
-  g_rz_cfg_dir_test = false;
-}
-
-fn rz_cfg_dir_exists(path: string) -> bool {
-  if (g_rz_cfg_dir_test) { return g_rz_cfg_dir_test_ok; }
-  return dir_exists((cstring)path.chars) != 0;
-}
 
 fn rz_cfg_bad_num(e: RzConfigErrors*, label: string, code: int32, got: int64, min: int64, max: int64) {
   if (e == 0) { return; }
@@ -84,11 +53,6 @@ fn rz_cfg_bad_str(e: RzConfigErrors*, label: string, reason: string) {
 fn rz_cfg_checks(c: RzConfig*, e: RzConfigErrors*, first: int32*) -> bool {
   var bad: bool = false;
 
-  if (rz_str_len(rz_config_bind(c)) == 0) {
-    rz_cfg_bad_str(e, "RAIZE_BIND_ADDR", "must be a non-empty address");
-    if (*first == 0) { *first = RZ_CFG_E_BIND; }
-    bad = true;
-  }
   if (c->port < RZ_CFG_MIN_PORT || c->port > RZ_CFG_MAX_PORT) {
     rz_cfg_bad_num(e, "RAIZE_PORT", RZ_CFG_E_PORT, (int64)c->port, (int64)RZ_CFG_MIN_PORT, (int64)RZ_CFG_MAX_PORT);
     if (*first == 0) { *first = RZ_CFG_E_PORT; }
@@ -124,16 +88,6 @@ fn rz_cfg_checks(c: RzConfig*, e: RzConfigErrors*, first: int32*) -> bool {
     if (*first == 0) { *first = RZ_CFG_E_CACHE; }
     bad = true;
   }
-  if (rz_str_len(rz_config_static_root(c)) == 0) {
-    rz_cfg_bad_str(e, "RAIZE_STATIC_ROOT", "must be a non-empty path");
-    if (*first == 0) { *first = RZ_CFG_E_STATIC_ROOT; }
-    bad = true;
-  }
-  if (rz_str_len(rz_config_template_root(c)) == 0) {
-    rz_cfg_bad_str(e, "RAIZE_TEMPLATE_ROOT", "must be a non-empty path");
-    if (*first == 0) { *first = RZ_CFG_E_TEMPLATE_ROOT; }
-    bad = true;
-  }
   if (rz_str_len(rz_config_allow_origin(c)) == 0) {
     rz_cfg_bad_str(e, "RAIZE_ALLOWED_ORIGIN", "must be a non-empty origin");
     if (*first == 0) { *first = RZ_CFG_E_ORIGIN; }
@@ -167,47 +121,4 @@ export fn rz_config_validate_code(c: RzConfig*) -> int32 {
   var first: int32 = 0;
   rz_cfg_checks(c, 0, &first);
   return first;
-}
-
-// Existence of both roots. Separate from rz_config_validate because it touches
-// the filesystem and because a root only has to exist when its module is
-// mounted. Returns 0 clean, -1 otherwise (the list is filled when non-null).
-export fn rz_config_validate_roots(c: RzConfig*, e: RzConfigErrors*) -> int32 {
-  if (c == 0) { return RZ_CFG_E_ARGS; }
-  if (c->frozen) { return RZ_CFG_E_FROZEN; }
-  var bad: bool = false;
-
-  var sr: string = rz_config_static_root(c);
-  if (rz_str_len(sr) == 0) {
-    rz_cfg_bad_str(e, "RAIZE_STATIC_ROOT", "must be a non-empty path");
-    bad = true;
-  } else if (!rz_cfg_dir_exists(sr)) {
-    rz_cfg_bad_str(e, "RAIZE_STATIC_ROOT", "directory does not exist");
-    bad = true;
-  }
-
-  var tr: string = rz_config_template_root(c);
-  if (rz_str_len(tr) == 0) {
-    rz_cfg_bad_str(e, "RAIZE_TEMPLATE_ROOT", "must be a non-empty path");
-    bad = true;
-  } else if (!rz_cfg_dir_exists(tr)) {
-    rz_cfg_bad_str(e, "RAIZE_TEMPLATE_ROOT", "directory does not exist");
-    bad = true;
-  }
-
-  if (bad) { return -1; }
-  return 0;
-}
-
-// Code-only variant of the root check.
-export fn rz_config_validate_roots_code(c: RzConfig*) -> int32 {
-  if (c == 0) { return RZ_CFG_E_ARGS; }
-  if (c->frozen) { return RZ_CFG_E_FROZEN; }
-  var sr: string = rz_config_static_root(c);
-  if (rz_str_len(sr) == 0) { return RZ_CFG_E_STATIC_ROOT; }
-  if (!rz_cfg_dir_exists(sr)) { return RZ_CFG_E_STATIC_ROOT_MISSING; }
-  var tr: string = rz_config_template_root(c);
-  if (rz_str_len(tr) == 0) { return RZ_CFG_E_TEMPLATE_ROOT; }
-  if (!rz_cfg_dir_exists(tr)) { return RZ_CFG_E_TEMPLATE_ROOT_MISSING; }
-  return RZ_CFG_OK;
 }

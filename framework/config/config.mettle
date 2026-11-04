@@ -7,10 +7,21 @@
 //
 //   types.mettle     RzConfig, RzConfigError(s), defaults, accessors, strerror
 //   env.mettle       the exact RAIZE_* overlay and its strict parsing
-//   validate.mettle  the pre-bind checks and the root-existence check
+//   validate.mettle  the pre-bind checks
 //   config.mettle    load order, set, to_opts (this file)
 //
 // ## Load order (the later wins)
+//
+// For an app run by rz_run (framework/app/run, D2), operators always win:
+//
+//   1. framework defaults       rz_config_default()
+//   2. app defaults             rz_config_apply() per rz_default(app, key, value)
+//   3. environment overlay      rz_config_from_env()      RAIZE_*
+//   4. command line             rz_config_apply("port")   --port N
+//   5. validate, freeze         rz_config_validate(), rz_config_freeze()
+//
+// The older hand-wired order below (rz_config_set after the environment, so
+// program code beats RAIZE_*) remains only for the examples that predate rz_run:
 //
 //   1. defaults                 rz_config_default()
 //   2. environment overlay      rz_config_from_env()      RAIZE_*
@@ -34,14 +45,6 @@
 //     var opts: RzServerOpts = rz_server_opts_default();
 //     rz_config_to_opts(&c, &opts);
 //     rz_config_freeze(&c);
-//
-// ## Carried but not honoured (also stated in types.mettle)
-//
-// RAIZE_BIND_ADDR is parsed, validated and exposed by rz_config_bind(), but
-// framework/server binds INADDR_ANY only and has no address parameter yet, so
-// it does not change where the socket listens. RAIZE_STORE_DSN is parsed and
-// validated, but no driver is wired into the ORM seam yet, so it reaches
-// nothing. Both are carried so the wiring is a one-line change later.
 //
 // ## Immutable afterwards
 //
