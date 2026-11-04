@@ -15,7 +15,7 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [002](002-form-semicolon-separator.md) | bug | raize_web | low | Query strings and form bodies are also split on `;` | fixed (split on `&` only) |
 | [003](003-clear-cookie-path.md) | limitation | raize_web | low | `rz_ctx_clear_cookie` takes no options (only `Path=/`, can't repeat Secure/SameSite) | open |
 | [004](004-sigterm-live-clients.md) | unverified | raize_web | medium | Shutdown on SIGTERM with live keep-alive or WebSocket clients is unverified | open; P3-C fixture asserts exit 0 within 3 s with a connected Signal |
-| [005](005-channels-not-wired.md) | missing | raize_web | medium | `rz_channel` records a declaration but no `/socket/websocket` route is derived yet | open; P3-C (stopped before it started; tree clean at 32bf689) |
+| [005](005-channels-not-wired.md) | missing | raize_web | medium | `rz_channel` records a declaration but no `/socket/websocket` route is derived yet | open; P3-C (stopped before it started; tree clean at da8c02a) |
 | [006](006-per-user-signals.md) | missing | raize_web | high | Signals cannot be per-user: `mount` gets no request, session or user, and the Signal socket has no guard | open; P3-C (DECISIONS A9, A10, F5) |
 | [007](007-rzpp-multi-file.md) | missing | raize_web | medium | rzpp handles one file at a time; multi-file apps need entry mode | open; P3-C |
 | [008](008-view-hole-error-lines.md) | limitation | raize_web | low | A Mettle type error inside a view hole points at the `return html"""` line | open; needs a compiler line-mapping directive (report 014) or tagged literals (report 013) |
