@@ -1,7 +1,8 @@
 # Reports: bugs, limitations and missing features
 
 Everything known to be wrong or missing in raize_web, one file each, so nothing lives only
-in a conversation. Add a file for every new bug or missing feature (next free number),
+in a conversation. Scope: Mettle and the Mettle ecosystem only (raize, the Mettle compiler,
+mbuild, flux_orm, MeoSQL, mist_plot). Nothing about external libraries or tools. Add a file for every new bug or missing feature (next free number),
 update its status line when it changes, and keep this index in sync.
 
 Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restriction),
@@ -21,7 +22,6 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 | [009](009-rzpp-resource-file-size.md) | cleanup | raize_web | low | `tools/rzpp/resource.mettle` is 459 lines (D6 budget 400); lint does not cover tools/ | open; P6-G3 splits it and extends lint to tools/ |
 | [010](010-signal-dependency-tracking.md) | missing | raize_web | low | Signals re-render the whole view per event (value diff), not per changed field | open; design in docs/design/views.md §3, needs compiler help (report 015) |
 | [011](011-keyed-lists.md) | missing | raize_web | low | No keyed lists: a changed comprehension resends its whole `d` array | open (O2: out of scope of the redesign) |
-| [012](012-phoenix-js-untested.md) | unverified | raize_web | low | The stock phoenix.js / phoenix_live_view.js clients were never run against raize | open |
 | [013](013-compiler-tagged-literals.md) | compiler | Mettle compiler | feature | Tagged literals (`html"""..."""` handed to a compile-time `@literal` metafunction) | not delivered: the cross-session message to the mettle session was held and expired; full request in docs/design/mettle-tagged-literals-request.md |
 | [014](014-compiler-generic-inference-field-access.md) | compiler | Mettle compiler | medium | Generic inference fails on field-access arguments (`put(h, s->n)`: "Nothing in this call says what 'T' is") | worked around in rzpp (field paths render via string interpolation); repro in docs/design/mettle-tagged-literals-request.md |
 | [015](015-compiler-lambda-generic-params.md) | compiler | Mettle compiler | medium | A lambda inside a generic function cannot see its type parameters; `&generic<T>` does not parse | worked around with rzpp-generated non-generic glue (`<Type>__handle`, `<s>_signal`) |
