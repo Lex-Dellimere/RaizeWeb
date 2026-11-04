@@ -665,7 +665,10 @@ export fn rz_buf_cstr(b: RzBuf*) -> cstring {
 
 // Hands the bytes to the caller, who owns them. The buffer is gone.
 export fn rz_buf_take(b: RzBuf*) -> string {
-  if (b->data == 0) {
+  // An empty result is the static empty string: rz_str_free skips length-0
+  // strings, so returning a length-0 view of the buffer would leak it.
+  if (b->data == 0 || b->len == 0) {
+    if (b->data != 0) { free(b->data); }
     free(b);
     return rz_str_empty();
   }
