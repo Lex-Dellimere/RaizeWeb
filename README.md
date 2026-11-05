@@ -27,7 +27,7 @@ submodule under `libs/`:
 | `raize_session` (`libs/session`) | [RaizeSession](https://github.com/Lex-Dellimere/RaizeSession) | cookie sessions, CSRF, flash |
 | `raize_auth` (`libs/auth`) | [RaizeAuth](https://github.com/Lex-Dellimere/RaizeAuth) | passwords, login, lockout, tokens, policies |
 | `raize_api` (`libs/api`) | [RaizeAPI](https://github.com/Lex-Dellimere/RaizeAPI) | API layer: negotiation, problem details, OpenAPI, rate limits |
-| `telemetry` (`libs/telemetry`) | [RaizeTelemetry](https://github.com/Lex-Dellimere/RaizeTelemetry) | events, handlers, spans |
+| `raize_telemetry` (`libs/telemetry`) | [RaizeTelemetry](https://github.com/Lex-Dellimere/RaizeTelemetry) | events, handlers, spans |
 
 Dependencies are one-way: `raize_core` <- `raize_realtime`, `raize_template` <- `raize_signal`;
 `raize_core` <- `raize_resource`; `raize_app` depends on those four; `raize_session` and

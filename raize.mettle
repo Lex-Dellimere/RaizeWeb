@@ -20,4 +20,4 @@ import "raize_realtime/realtime";
 import "raize_session/raize_session";
 import "raize_auth/auth";
 import "raize_api/raize_api";
-import "telemetry/telemetry";
+import "raize_telemetry/raize_telemetry";
