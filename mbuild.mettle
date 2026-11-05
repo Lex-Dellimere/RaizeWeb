@@ -26,7 +26,7 @@ fn deps() {
   mb_dep_path("raize_telemetry", "libs/telemetry");
   // crypto (Cryptex) lives next to raize_web (tools/clone-deps.sh); the session fixture's
   // test store imports it through raize_session's ses_ core.
-  mb_dep_path("crypto", "../cryptex");
+  mb_dep_path("cryptex", "../cryptex");
 }
 
 // deps: resolve every package under libs/ (writes each one's mettle.deps), then this one.
