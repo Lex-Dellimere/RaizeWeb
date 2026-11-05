@@ -215,5 +215,8 @@ Effort on `poll` and `hub` stays minimal: correct and leak-free, not tuned.
   workers, not from the hub thread.
 - **mbuild**: keep the Makefile until `mbuild.mettle` is settled (the mbuild
   session asked for this on 2026-11-04).
-- **mist_plot**: `integrations/raize` renders charts. Live charts are a
-  natural M6 demo.
+- **MistPlot**: `integrations/raize/mp_raize.mettle` renders charts
+  (`mp_raize_svg`, `mp_raize_html`) and makes them live with
+  `mp_raize_channel(app, c, topic, socket_path)` plus `mp_raize_notify(c)`, which
+  `rz_broadcast`s a small notice so the browser refetches the SVG (ETag/304,
+  polling fallback). API: https://github.com/Lex-Dellimere/MistPlot/blob/main/docs/API.md
