@@ -24,9 +24,8 @@ fn deps() {
   mb_dep_path("raize_auth", "libs/auth");
   mb_dep_path("raize_api", "libs/api");
   mb_dep_path("telemetry", "libs/telemetry");
-  // Libraries from outside the framework, next to raize_web (tools/clone-deps.sh). The session
-  // fixture's test store imports session directly, so both are direct dependencies here.
-  mb_dep_path("session", "../session");
+  // crypto (Cryptex) lives next to raize_web (tools/clone-deps.sh); the session fixture's
+  // test store imports it through raize_session's ses_ core.
   mb_dep_path("crypto", "../cryptex");
 }
 

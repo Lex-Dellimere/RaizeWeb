@@ -5,7 +5,7 @@
 
 import "std/mem";
 import "std/thread";
-import "session/session";
+import "raize_session/ses/session";
 
 const FX_CAP: int32 = 256;
 

@@ -33,3 +33,4 @@ Kinds: **bug** (wrong behaviour), **limitation** (works, with a known restrictio
 Related: example_sass keeps its own reports in `~/Projects/mettle/example_sass/reports/`
 (001 is a Mettle release-build ICE it found; 002/003 are raize's 001/002 here; its
 `F01-raize-missing.md` lists the raize features it needs, all tracked here).
+| [033](033-hub-ws-intermittent-hang.md) | bug | raize_web | medium | The hub WebSocket suite hung once (ws_client against hub_app) | open |

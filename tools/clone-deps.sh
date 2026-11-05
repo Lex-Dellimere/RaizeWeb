@@ -11,4 +11,3 @@ clone https://github.com/Lex-Dellimere/Codec.git codec
 clone https://github.com/Lex-Dellimere/Press.git press
 clone https://github.com/Lex-Dellimere/mbuild.git mbuild
 clone https://github.com/The-Mettle-Project/Mettle.git Mettle
-[ -d session ] || echo "note: the session library (folder 'session') has no public repository yet"

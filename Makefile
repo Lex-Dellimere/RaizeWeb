@@ -13,8 +13,8 @@ FIXTURE_APPS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/fixtures/app/*/a
 PKG_DIRS := $(addprefix libs/,core realtime template signal resource app session)
 PKG_SRC := $(foreach d,$(PKG_DIRS),$(wildcard $(d)/*.mettle $(d)/*/*.mettle))
 FRAMEWORK := raize.mettle $(PKG_SRC) libs/signal/signal.js
-# raize_session builds on these sibling repos (mettle.deps: session, crypto).
-FRAMEWORK += $(wildcard ../session/src/*.mettle ../cryptex/src/*.mettle)
+# raize_session's ses_ core and crypto (cryptex, next to raize_web) also trigger rebuilds.
+FRAMEWORK += $(wildcard libs/session/ses/*.mettle ../cryptex/src/*.mettle)
 MODULES := $(PKG_SRC) $(wildcard tests/unit/*.mettle)
 
 .PHONY: all clean test lint integration apps apps-release $(APPS) run-% smoke tasks-test ws-test hub-test chat-test signal-test
@@ -68,55 +68,55 @@ test: lint
 	done; exit $$fail
 
 smoke: $(BUILD)/tasks
-	./tests/integration/tasks.sh $(BUILD)/tasks $(PORT)
+	timeout 120 ./tests/integration/tasks.sh $(BUILD)/tasks $(PORT)
 
 tasks-test: $(BUILD)/tasks $(BUILD)/startup
-	./tests/integration/tasks.sh $(BUILD)/tasks 8081
-	./tests/integration/leak.sh $(BUILD)/tasks 8081 2000
-	./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
+	timeout 120 ./tests/integration/tasks.sh $(BUILD)/tasks 8081
+	timeout 120 ./tests/integration/leak.sh $(BUILD)/tasks 8081 2000
+	timeout 120 ./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
 
 # Fixture apps (tests/fixtures/app/*/test.sh), debug; apps-release builds --release.
 apps: $(BUILD)/rzpp $(addprefix $(BUILD)/,$(FIXTURE_APPS))
-	./tests/integration/apps.sh $(BUILD)
+	timeout 120 ./tests/integration/apps.sh $(BUILD)
 
 apps-release: $(BUILD)/rzpp $(addprefix $(BUILD)/release/,$(FIXTURE_APPS))
-	./tests/integration/apps.sh $(BUILD)/release
+	timeout 120 ./tests/integration/apps.sh $(BUILD)/release
 
 # Everything, in order: layout, unit, then the HTTP and WebSocket suites.
 integration: test $(BUILD)/tasks $(BUILD)/chat $(BUILD)/todos $(BUILD)/ws_echo $(BUILD)/hub_app $(BUILD)/rzpp $(addprefix $(BUILD)/,$(FIXTURE_APPS))
-	./tests/integration/tasks.sh $(BUILD)/tasks 8080
-	./tests/integration/http_edges.sh $(BUILD)/tasks 8080
-	./tests/integration/leak.sh $(BUILD)/tasks 8080 2000
-	./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
-	./tests/integration/ws.sh $(BUILD)/ws_echo 8095
-	./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
-	./tests/integration/chat.sh $(BUILD)/chat 8090
-	./tests/integration/rzpp.sh $(BUILD)/rzpp
-	./tests/integration/signal.sh $(BUILD)/todos 8070
-	./tests/integration/apps.sh $(BUILD)
+	timeout 120 ./tests/integration/tasks.sh $(BUILD)/tasks 8080
+	timeout 120 ./tests/integration/http_edges.sh $(BUILD)/tasks 8080
+	timeout 120 ./tests/integration/leak.sh $(BUILD)/tasks 8080 2000
+	timeout 120 ./tests/integration/config.sh $(BUILD)/tasks 8082 $(BUILD)/startup
+	timeout 120 ./tests/integration/ws.sh $(BUILD)/ws_echo 8095
+	timeout 120 ./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
+	timeout 120 ./tests/integration/chat.sh $(BUILD)/chat 8090
+	timeout 120 ./tests/integration/rzpp.sh $(BUILD)/rzpp
+	timeout 120 ./tests/integration/signal.sh $(BUILD)/todos 8070
+	timeout 120 ./tests/integration/apps.sh $(BUILD)
 
 # WebSockets on the epoll loop (needs the dev compiler's syscall builtin).
 $(BUILD)/ws_echo: tests/fixtures/poll/ws_echo.mettle $(FRAMEWORK) | $(BUILD)
 	$(M) --build $< -o $@
 
 ws-test: $(BUILD)/ws_echo
-	./tests/integration/ws.sh $(BUILD)/ws_echo 8095
+	timeout 120 ./tests/integration/ws.sh $(BUILD)/ws_echo 8095
 
 # The same checks through the real server: router -> rz_hub_upgrade -> hub.
 $(BUILD)/hub_app: tests/fixtures/hub/app.mettle $(FRAMEWORK) | $(BUILD)
 	$(M) --build $< -o $@
 
 hub-test: $(BUILD)/hub_app
-	./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
+	timeout 120 ./tests/integration/ws.sh $(BUILD)/hub_app 8097 http
 
 # Signals: rzpp diagnostics, then examples/todos driven like signal.js.
 signal-test: $(BUILD)/rzpp $(BUILD)/todos
-	./tests/integration/rzpp.sh $(BUILD)/rzpp
-	./tests/integration/signal.sh $(BUILD)/todos 8070
+	timeout 120 ./tests/integration/rzpp.sh $(BUILD)/rzpp
+	timeout 120 ./tests/integration/signal.sh $(BUILD)/todos 8070
 
 # Phoenix channels: examples/chat driven by a v2-protocol client.
 chat-test: $(BUILD)/chat
-	./tests/integration/chat.sh $(BUILD)/chat 8090
+	timeout 120 ./tests/integration/chat.sh $(BUILD)/chat 8090
 
 run-%: $(BUILD)/%
 	./$(BUILD)/$*

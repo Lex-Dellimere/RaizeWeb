@@ -54,7 +54,7 @@ git clone --recursive https://github.com/Lex-Dellimere/RaizeWeb.git raize_web
 
 `--recursive` brings every framework package into `libs/`. A few libraries the packages use
 live outside the framework and are path dependencies on folders next to `raize_web`, so
-`clone-deps.sh` clones them there: `cryptex` (crypto), `session`, `codec` and `press`, plus
+`clone-deps.sh` clones them there: `cryptex` (crypto), `codec` and `press`, plus
 `Mettle` (the compiler) and `mbuild`. Build the compiler (`make` in `Mettle/`) and mbuild
 (see its README), then, in `raize_web`:
 
