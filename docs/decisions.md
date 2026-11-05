@@ -1,7 +1,7 @@
 # DECISIONS: raize DX redesign (Ash-style declarations, resources, refactor, docs)
 
-> Design record for raize (D1–D8, amendments, findings). Copied from the local `.apex/DECISIONS.md`;
-> paths written before the package split say `framework/...` (see `SPLIT-imports.tsv`).
+> Design record for raize (D1–D8, amendments, findings). Paths written before the package
+> split say `framework/...`; `SPLIT-imports.tsv` maps them to today's packages.
 
 Decided 2026-11-04 by the design agent. Build agents follow this file. AC.md wins over
 it; the compiler wins over both (record the finding here).
@@ -235,7 +235,7 @@ needs global names, and generics/traits through aliases are unverified here. A s
 public prefix: AC keeps rz_, and public names should be the short ones. Per-area
 imports: AC D1.
 
-**Consequences.** P1 and P5 are scripted repo-wide renames (mappings under .apex/). New
+**Consequences.** P1 and P5 are scripted repo-wide renames (scripted mappings). New
 code uses final names from P2 on. Fixtures keep using internals.
 
 **Falsifier.** `Rz_Name` or `rz__name` misparse or collide (P2 runs a 10-line probe); a
@@ -688,12 +688,12 @@ writer uses; at most 3 writers.
 
 | Phase | W | Owns | Done when |
 |---|---|---|---|
-| **P1** one prefix, one status | 1 | whole tree: scripted `raize_`→`rz_`, `Raize`→`Rz` (.apex/renames-p1.tsv, collision check first); framework/core/status.mettle; router codes; `rz_ctx_*` return the status; lint drops `raize_` | integration green; release tasks + todos run |
+| **P1** one prefix, one status | 1 | whole tree: scripted `raize_`→`rz_`, `Raize`→`Rz` (collision check first); framework/core/status.mettle; router codes; `rz_ctx_*` return the status; lint drops `raize_` | integration green; release tasks + todos run |
 | **P2** DRAFT SLICE | 1 | raize.mettle; framework/app/{app,types,declare,run} (rz_run, rz_get/post, rz_default, recover + body cap, Signal and API mounts); framework/resource/{resource,def,errors,layer,mem,action,api} (create/read/get/count/destroy/custom, required/max_length); tools/rzpp/{deco,resource,signal} + main dispatch (single-file); tests/fixtures/app/slice/{app.mettle,test.sh}; tests/integration/apps.sh (runs every fixtures/app/*/test.sh); generic Makefile rules (every example and fixture app via rzpp); data-driven rzpp.sh (`// expect: <line>: <text>` in each bad fixture) + bad_resource_field; the naming probe | slice test passes, debug and release |
-| GATE | | | orchestrator checks the slice against D1–D4 |
+| GATE | | | the slice is checked against D1–D4 |
 | **P3** finish layers | 3 | **A** framework/app (static, rz_use_*, channels, timers, full config precedence, startup errors, exit codes), middleware facades, channel accessors + rz_chan_refuse + rz_broadcast, config app-defaults + dead keys, Makefile, fixtures/app/startup. **B** framework/resource (update/PATCH, min_length, all statuses, rz_error_text), rzpp/resource.mettle, fixtures/rzpp/bad_resource_*, fixtures/app/resource, tests/unit/resource_test.mettle. **C** framework/signal (scratch rename, page via app), rzpp/{signal,gen,msg,src,main} (entry mode, import rewrite, `<!doctype>`, generated names), fixtures/rzpp/bad_signal_*, fixtures/app/multi | own fixtures pass; old examples still build (old API kept) |
 | **P4** examples | 3 | **tasks** examples/tasks/**, tasks.sh, http_edges.sh, leak.sh, config.sh. **chat** examples/chat/**, chat.sh. **todos** examples/todos/** (+head.html), signal.sh, signal_client.py, rzpp.sh mapping check | examples match the targets; app APIs with no callers left deleted |
-| **P5** internals | 1 | whole tree: classify, rename to `rz__`/`Rz_`/`RZ__` (.apex/renames-p5.tsv), privatize single-module exports, delete dead code, "no internals in examples/" lint, doccheck.sh in warn mode | integration green; lint clean |
+| **P5** internals | 1 | whole tree: classify, rename to `rz__`/`Rz_`/`RZ__`, privatize single-module exports, delete dead code, "no internals in examples/" lint, doccheck.sh in warn mode | integration green; lint clean |
 | **P6** readability + docs | 3 | **G1** framework/{app,resource,core,context,str}, raize.mettle. **G2** framework/{signal,channel,hub,poll,ws,server}. **G3** framework/{router,middleware,static,template,config}, tools/rzpp | D6 applied; doccheck clean on own dirs |
 | **P7** reference + guide | 1 | doccheck failing mode, tools/rzdoc.sh, docs/reference/**, docs/guide.md, README.md, views.md/realtime.md updates, compiler asks | lint enforces coverage and fresh docs |
 | FINAL GATE | | | AC S1–S6, I1–I6, D1–D3 checked one by one |
@@ -970,4 +970,11 @@ User paused before approving TM + SPLIT (restarting the desktop app): ask again 
 - `poll` moves to `raize_realtime`: its only user is the hub, and alph replaces both there.
 - `template` (string templates) becomes package `raize_template`, used by raize_signal and mist_plot;
   `raize_core` is now HTTP only: str, status, context, router, server, middleware, config, static.
-- This record lives in git as `docs/decisions.md`; `.apex/DECISIONS.md` is a symlink to it.
+
+### D8 amendment: one repository per package (2026-11-05)
+Each package is its own repository (RaizeCore, RaizeRealtime, RaizeTemplate, RaizeSignal,
+RaizeResource, RaizeApp, RaizeSession), split out with its history and tagged v0.1.0, and
+tracked by RaizeWeb as a git submodule under `libs/<name>`. RaizeAuth, RaizeAPI and RaizeTelemetry
+are submodules too (`libs/auth`, `libs/api`, `libs/telemetry`). RaizeWeb is the umbrella `raize`:
+the facade, rzpp, examples and all tests. Until the registry has them, the packages are path
+dependencies on each other inside the checkout; `mbuild integration` runs every suite.

@@ -1,8 +1,8 @@
 import "mbuild/api";
 
 // raize: a Phoenix-style web framework for Mettle (SSR, Signals, Channels, Resources).
-// This is the umbrella package: `import "raize/raize"` brings in the whole app-facing API.
-// Library only; its one bin is the rzpp view/decorator preprocessor, which apps build with
+// This is the umbrella package: `import "raize/raize"` brings in the whole framework.
+// Its one bin is rzpp, the html/decorator preprocessor, which apps build with
 // mb_dep_bin("raize", "rzpp") and run from their own hook_pre_build.
 fn project() {
   mb_package("raize", "0.1.0");
@@ -11,12 +11,56 @@ fn project() {
   mb_bin("rzpp", "tools/rzpp/main.mettle");
 }
 
-// Sibling packages by path until raize is published; publish switches these to mb_dep.
+// Every package of the framework is its own repository, tracked here as a git submodule
+// under libs/ (`git clone --recursive`). Path dependencies until the registry has them.
 fn deps() {
   mb_dep_path("raize_core", "libs/core");
-  mb_dep_path("raize_template", "libs/template");
   mb_dep_path("raize_realtime", "libs/realtime");
+  mb_dep_path("raize_template", "libs/template");
   mb_dep_path("raize_signal", "libs/signal");
   mb_dep_path("raize_resource", "libs/resource");
   mb_dep_path("raize_app", "libs/app");
+  mb_dep_path("raize_session", "libs/session");
+  mb_dep_path("raize_auth", "libs/auth");
+  mb_dep_path("raize_api", "libs/api");
+  mb_dep_path("telemetry", "libs/telemetry");
+  // Libraries from outside the framework, next to raize_web (tools/clone-deps.sh). The session
+  // fixture's test store imports session directly, so both are direct dependencies here.
+  mb_dep_path("session", "../session");
+  mb_dep_path("crypto", "../cryptex");
+}
+
+// deps: resolve every package under libs/ (writes each one's mettle.deps), then this one.
+fn cmd_deps(a: MbArgs*) -> int32 {
+  var mbuild: string = mb_env("MBUILD_EXE");
+  if (mbuild == "") { mbuild = "mbuild"; }
+  // The framework's packages, in dependency order.
+  var pkgs: string[10] = ["core", "realtime", "template", "signal", "resource", "app",
+                          "session", "auth", "api", "telemetry"];
+  var failed: int32 = 0;
+  for i in 0..10 {
+    var name: string = pkgs[i];
+    var c: MbCmd* = mb_cmd(mbuild);
+    mb_cmd_arg(c, "check");
+    mb_cmd_cwd(c, mb_root() + "/libs/" + name);
+    if (mb_cmd_run(c) != 0) {
+      mb_warn(name + " does not check");
+      failed = failed + 1;
+    }
+  }
+  if (mb_mbuild("check") != 0) { failed = failed + 1; }
+  if (failed > 0) { return 1; }
+  return 0;
+}
+
+// integration: every suite in debug (lint, unit, HTTP, WebSocket, channels, Signals,
+// rzpp, fixture apps), then the fixture apps in --release.
+fn cmd_integration(a: MbArgs*) -> int32 {
+  if (cmd_deps(a) != 0) { return 1; }
+  var dbg: MbCmd* = mb_cmd("make");
+  mb_cmd_arg(dbg, "integration");
+  if (mb_cmd_run(dbg) != 0) { return 1; }
+  var rel: MbCmd* = mb_cmd("make");
+  mb_cmd_arg(rel, "apps-release");
+  return mb_cmd_run(rel);
 }

@@ -8,10 +8,14 @@ APPS    := tasks chat todos
 # Fixture apps: tests/fixtures/app/<name>/app.mettle -> build/<name>, checked by
 # tests/fixtures/app/<name>/test.sh (tests/integration/apps.sh runs them all).
 FIXTURE_APPS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/fixtures/app/*/app.mettle))))
-FRAMEWORK := raize.mettle $(wildcard libs/*/*.mettle libs/*/*/*.mettle) libs/signal/signal.js
+# The framework's packages are git submodules under libs/ (README "Getting the source").
+# raize_auth, raize_api and telemetry (libs/auth, api, telemetry) keep their own suites.
+PKG_DIRS := $(addprefix libs/,core realtime template signal resource app session)
+PKG_SRC := $(foreach d,$(PKG_DIRS),$(wildcard $(d)/*.mettle $(d)/*/*.mettle))
+FRAMEWORK := raize.mettle $(PKG_SRC) libs/signal/signal.js
 # raize_session builds on these sibling repos (mettle.deps: session, crypto).
 FRAMEWORK += $(wildcard ../session/src/*.mettle ../cryptex/src/*.mettle)
-MODULES := $(wildcard libs/*/*.mettle libs/*/*/*.mettle) $(wildcard tests/unit/*.mettle)
+MODULES := $(PKG_SRC) $(wildcard tests/unit/*.mettle)
 
 .PHONY: all clean test lint integration apps apps-release $(APPS) run-% smoke tasks-test ws-test hub-test chat-test signal-test
 

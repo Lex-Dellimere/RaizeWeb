@@ -1,0 +1,30 @@
+[submodule "libs/core"]
+	path = libs/core
+	url = https://github.com/Lex-Dellimere/RaizeCore.git
+[submodule "libs/realtime"]
+	path = libs/realtime
+	url = https://github.com/Lex-Dellimere/RaizeRealtime.git
+[submodule "libs/template"]
+	path = libs/template
+	url = https://github.com/Lex-Dellimere/RaizeTemplate.git
+[submodule "libs/signal"]
+	path = libs/signal
+	url = https://github.com/Lex-Dellimere/RaizeSignal.git
+[submodule "libs/resource"]
+	path = libs/resource
+	url = https://github.com/Lex-Dellimere/RaizeResource.git
+[submodule "libs/app"]
+	path = libs/app
+	url = https://github.com/Lex-Dellimere/RaizeApp.git
+[submodule "libs/session"]
+	path = libs/session
+	url = https://github.com/Lex-Dellimere/RaizeSession.git
+[submodule "libs/auth"]
+	path = libs/auth
+	url = https://github.com/Lex-Dellimere/RaizeAuth.git
+[submodule "libs/api"]
+	path = libs/api
+	url = https://github.com/Lex-Dellimere/RaizeAPI.git
+[submodule "libs/telemetry"]
+	path = libs/telemetry
+	url = https://github.com/Lex-Dellimere/RaizeTelemetry.git

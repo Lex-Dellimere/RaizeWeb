@@ -18,3 +18,4 @@ raize/framework/ws/	raize_realtime/ws/
 raize_core/poll/	raize_realtime/poll/
 raize_core/template/	raize_template/
 raize/app/	raize_app/
+# Since 2026-11-05 every package is its own repository, checked out as ../<package> (README).

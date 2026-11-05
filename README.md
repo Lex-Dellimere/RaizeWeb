@@ -12,27 +12,59 @@ links is Mettle's, which means no libc, no TLS library, no OpenSSL, and no
 
 ## Layout
 
+RaizeWeb is the umbrella package `raize`: `import "raize/raize";` brings in the whole
+framework. Every layer is its own repository and mbuild package, tracked here as a git
+submodule under `libs/`:
+
+| Package | Repository | What it holds |
+|---|---|---|
+| `raize_core` (`libs/core`) | [RaizeCore](https://github.com/Lex-Dellimere/RaizeCore) | strings, status codes, request context, router, HTTP/1.1 server, middleware, config, static files |
+| `raize_realtime` (`libs/realtime`) | [RaizeRealtime](https://github.com/Lex-Dellimere/RaizeRealtime) | epoll loop, WebSocket, hub thread, Phoenix v2 channels |
+| `raize_template` (`libs/template`) | [RaizeTemplate](https://github.com/Lex-Dellimere/RaizeTemplate) | HTML/text string templates |
+| `raize_signal` (`libs/signal`) | [RaizeSignal](https://github.com/Lex-Dellimere/RaizeSignal) | Signals: html views, diffs, signal.js |
+| `raize_resource` (`libs/resource`) | [RaizeResource](https://github.com/Lex-Dellimere/RaizeResource) | resources, memory data layer, JSON API |
+| `raize_app` (`libs/app`) | [RaizeApp](https://github.com/Lex-Dellimere/RaizeApp) | rz_run, declarations, guards, rz_use, rz_every |
+| `raize_session` (`libs/session`) | [RaizeSession](https://github.com/Lex-Dellimere/RaizeSession) | cookie sessions, CSRF, flash |
+| `raize_auth` (`libs/auth`) | [RaizeAuth](https://github.com/Lex-Dellimere/RaizeAuth) | passwords, login, lockout, tokens, policies |
+| `raize_api` (`libs/api`) | [RaizeAPI](https://github.com/Lex-Dellimere/RaizeAPI) | API layer: negotiation, problem details, OpenAPI, rate limits |
+| `telemetry` (`libs/telemetry`) | [RaizeTelemetry](https://github.com/Lex-Dellimere/RaizeTelemetry) | events, handlers, spans |
+
+Dependencies are one-way: `raize_core` <- `raize_realtime`, `raize_template` <- `raize_signal`;
+`raize_core` <- `raize_resource`; `raize_app` depends on those four; `raize_session` and
+`raize_api` build on `raize_app`. This repository holds the umbrella facade (`raize.mettle`),
+the rzpp preprocessor (`tools/rzpp/`, the only bin), the examples and every test.
+
 ```
-raize.mettle      umbrella facade: `import "raize/raize"` (package `raize`, repo root)
-tools/rzpp/       the html""" / @resource / @signal preprocessor, raize's only bin
-libs/core/        `raize_core`: str, core/status, context, router, server, middleware,
-                  config, static
-libs/realtime/    `raize_realtime`: poll loop, ws, hub, channel
-libs/template/    `raize_template`: HTML/text string templates
-libs/signal/      `raize_signal`: Signals, html views, diffs, signal.js
-libs/resource/    `raize_resource`: resources, memory layer, JSON API
-libs/app/         `raize_app`: rz_run, declarations, guards, rz_use, rz_every
-libs/session/     `raize_session` (opt-in): cookie sessions, CSRF, flash over `session`
+raize.mettle      umbrella facade
+tools/rzpp/       the html""" / @resource / @signal preprocessor
+tools/clone-deps.sh  clone the libraries raize uses from outside the framework
+libs/             the framework packages (git submodules)
 examples/         tasks (JSON API + template), chat (channels), todos (Signal)
 tests/            lint.sh, integration/*.sh, unit/*.mettle, fixtures/
-docs/             handoff, decisions.md (design record), design notes, SPLIT-imports.tsv
+docs/             decisions.md (design record), design notes, SPLIT-imports.tsv
+reports/          known raize issues, one file each
 ```
 
-Each package has its own `mbuild.mettle`; dependencies are one-way:
-`raize_core` <- `raize_realtime`, `raize_template` <- `raize_signal`; `raize_core` <-
-`raize_resource`; `raize_app` depends on those four; add-ons such as `raize_session` depend
-on `raize_app`, and the `raize` umbrella only re-exports. Inside a package, imports are
-relative; across packages they use the package name, e.g. `import "raize_core/context/context"`.
+## Getting the source
+
+```bash
+git clone --recursive https://github.com/Lex-Dellimere/RaizeWeb.git raize_web
+./raize_web/tools/clone-deps.sh
+```
+
+`--recursive` brings every framework package into `libs/`. A few libraries the packages use
+live outside the framework and are path dependencies on folders next to `raize_web`, so
+`clone-deps.sh` clones them there: `cryptex` (crypto), `session`, `codec` and `press`, plus
+`Mettle` (the compiler) and `mbuild`. Build the compiler (`make` in `Mettle/`) and mbuild
+(see its README), then, in `raize_web`:
+
+```bash
+mbuild deps          # resolve every package
+mbuild build         # rzpp
+mbuild integration   # every suite, debug then release
+```
+
+To update the packages later: `git submodule update --remote --merge`.
 
 ## Build and run
 
@@ -104,7 +136,7 @@ Does not promise, because Mettle cannot:
 - DNS. Bind by address.
 - HTTP/2, chunked request bodies, or `Expect: 100-continue` beyond the
   documented answer.
-- An event loop off Linux x86-64. `libs/realtime/poll` uses raw x86-64 syscall
+- An event loop off Linux x86-64. `raize_realtime/poll` uses raw x86-64 syscall
   numbers through the dev compiler's `syscall` builtin; the blocking HTTP
   server works everywhere.
 - Catching a fault. A hardware fault is a process death in Mettle; the
@@ -116,7 +148,7 @@ Does not promise, because Mettle cannot:
 WebSockets, channels and Signals (real-time pages, after Phoenix LiveView),
 following Phoenix's model and wire protocol:
 see `docs/design/realtime.md`. Done so far: the WebSocket protocol
-(`libs/realtime/ws`, interpreter-tested) and the epoll loop (`libs/realtime/poll`),
+(`libs/realtime/ws`, interpreter-tested) and the epoll loop (`raize_realtime/poll`),
 proven together by `make ws-test` (18 checks over real sockets: echo,
 fragments, ping, close codes 1002/1007/1009, a cross-thread broadcast, 50
 concurrent clients). `libs/realtime/hub` mounts WebSockets on the real server: a
@@ -147,7 +179,7 @@ make signal-test                          # rzpp diagnostics + 27 protocol check
 
 See `docs/design/views.md`.
 
-`libs/realtime/poll` and `libs/realtime/hub` are a bridge: the epoll loop and the hub
+`raize_realtime/poll` and `libs/realtime/hub` are a bridge: the epoll loop and the hub
 thread will be replaced by the BEAM/OTP-style Mettle runtime. App code uses
 only the channel and Signal APIs, so it does not change when that happens.
 
